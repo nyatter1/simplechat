@@ -109,6 +109,7 @@
         let currentUser = null;
         let messages = [];
         let typingUsers = {}; 
+        let onlineUsers = [];
         let editingMessageId = null; 
         let lastTypingSent = 0;
         let showThemeModal = false;
@@ -196,25 +197,63 @@
             
             if (currentUser) {
                 setupFirestoreListeners();
+                updatePresence();
+                // Send heartbeat every 60 seconds
+                setInterval(updatePresence, 60000);
             }
 
             document.addEventListener('click', handleGlobalClicks);
         }
 
+        async function updatePresence() {
+            if (!currentUser) return;
+            try {
+                await setDoc(doc(db, "users", currentUser.id), {
+                    username: currentUser.username,
+                    color: currentUser.color,
+                    lastSeen: serverTimestamp()
+                }, { merge: true });
+            } catch (e) {
+                console.error("Presence update failed", e);
+            }
+        }
+
         function setupFirestoreListeners() {
-            // Messages Listener
-            const q = query(collection(db, "messages"), orderBy("timestamp", "asc"), limit(100));
+            // Messages Listener - UPDATED: Use 'desc' to get LATEST 100 messages, then reverse locally
+            const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(100));
             onSnapshot(q, (snapshot) => {
                 messages = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data(),
                     // Convert Firestore timestamp to millis
                     timestamp: doc.data().timestamp ? doc.data().timestamp.toMillis() : Date.now()
-                }));
+                })).reverse(); // Reverse to chronological order
                 renderChatMessages();
             });
 
-            // Typing Listener (Simplified: Just listen to a 'typing' collection docs)
+            // Online Users Listener
+            const usersQ = query(collection(db, "users"));
+            onSnapshot(usersQ, (snapshot) => {
+                const now = Date.now();
+                // Consider online if seen in last 2 minutes (allow some buffer)
+                const cutoff = now - (2 * 60 * 1000);
+                
+                const active = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.lastSeen && data.lastSeen.toMillis() > cutoff) {
+                        active.push({
+                            id: doc.id,
+                            ...data
+                        });
+                    }
+                });
+                // Sort online users by name
+                onlineUsers = active.sort((a,b) => a.username.localeCompare(b.username));
+                renderSidebar(); // Update sidebar with list
+            });
+
+            // Typing Listener
             const typingQ = query(collection(db, "typing"));
             onSnapshot(typingQ, (snapshot) => {
                 const now = Date.now();
@@ -374,51 +413,21 @@
         }
 
         function renderChatRoom(container) {
-            const safeUsername = escapeHtml(currentUser.username);
-            
             container.innerHTML = `
                 <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row">
                     <!-- Sidebar -->
-                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-64 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r">
-                        <div class="flex h-full flex-col">
-                            <div class="border-b theme-border-primary p-6">
-                                <h2 class="text-2xl font-bold theme-text-primary">SimpleConnect</h2>
-                                <p class="text-sm opacity-60">Global Room</p>
-                            </div>
-                            <div class="flex-1 overflow-y-auto p-4 space-y-6">
-                                <div>
-                                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Profile</h3>
-                                    <div class="flex items-center space-x-3 rounded-xl bg-gray-100/10 p-2 border border-gray-200/20">
-                                        <div class="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color}">
-                                            ${safeUsername.substring(0, 2).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <p class="font-semibold text-sm">${safeUsername}</p>
-                                            <div class="flex items-center text-xs text-green-500">
-                                                <span class="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500"></span> Online
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Settings</h3>
-                                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-xl p-3 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
-                                        <div class="flex h-8 w-8 items-center justify-center rounded-full theme-primary">
-                                            <i data-lucide="palette" class="w-4 h-4 text-white"></i>
-                                        </div>
-                                        <div>
-                                            <p class="font-medium text-sm">Themes</p>
-                                            <p class="text-xs opacity-60">Customization</p>
-                                        </div>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="p-4 border-t theme-border-primary">
-                                <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50/20 transition-colors">
-                                    <i data-lucide="log-out" class="mr-2 w-4 h-4"></i> Sign Out
-                                </button>
-                            </div>
+                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-64 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r flex flex-col">
+                        <div class="border-b theme-border-primary p-6">
+                            <h2 class="text-2xl font-bold theme-text-primary">SimpleConnect</h2>
+                            <p class="text-sm opacity-60">Global Room</p>
+                        </div>
+                        <div id="sidebarContent" class="flex-1 overflow-y-auto p-4 space-y-6">
+                            <!-- Injected by renderSidebar -->
+                        </div>
+                        <div class="p-4 border-t theme-border-primary">
+                            <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50/20 transition-colors">
+                                <i data-lucide="log-out" class="mr-2 w-4 h-4"></i> Sign Out
+                            </button>
                         </div>
                     </div>
                     
@@ -459,6 +468,9 @@
                     <div id="themeModalContainer"></div>
                 </div>
             `;
+
+            // Setup Sidebar Content
+            renderSidebar();
 
             // Mobile Menu
             const menuBtn = document.getElementById('menuBtn');
@@ -518,8 +530,64 @@
                 }
             });
             
-            // Initial render of empty list if needed, data comes from snapshot
             renderChatMessages();
+        }
+
+        function renderSidebar() {
+            const container = document.getElementById('sidebarContent');
+            if (!container) return;
+            
+            const safeUsername = escapeHtml(currentUser.username);
+            
+            // Build Online Users HTML
+            const onlineHTML = onlineUsers.length > 0 
+                ? onlineUsers.map(u => `
+                    <div class="flex items-center space-x-2 py-1">
+                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span class="text-sm truncate ${u.id === currentUser.id ? 'font-bold' : ''}">${escapeHtml(u.username)} ${u.id === currentUser.id ? '(You)' : ''}</span>
+                    </div>
+                  `).join('')
+                : '<p class="text-xs opacity-50 italic">Nobody else is online</p>';
+
+            container.innerHTML = `
+                <div>
+                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">My Profile</h3>
+                    <div class="flex items-center space-x-3 rounded-xl bg-gray-100/10 p-2 border border-gray-200/20">
+                        <div class="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color}">
+                            ${safeUsername.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                            <p class="font-semibold text-sm">${safeUsername}</p>
+                            <div class="flex items-center text-xs text-green-500">
+                                <span class="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500"></span> Online
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                     <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50 flex items-center justify-between">
+                        <span>Online Users (${onlineUsers.length})</span>
+                     </h3>
+                     <div class="bg-gray-50/50 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1 border border-gray-100/50">
+                        ${onlineHTML}
+                     </div>
+                </div>
+                
+                <div>
+                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Settings</h3>
+                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-xl p-3 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
+                        <div class="flex h-8 w-8 items-center justify-center rounded-full theme-primary">
+                            <i data-lucide="palette" class="w-4 h-4 text-white"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm">Themes</p>
+                            <p class="text-xs opacity-60">Customization</p>
+                        </div>
+                    </button>
+                </div>
+            `;
+            if(window.lucide) window.lucide.createIcons();
         }
 
         function renderThemeModal() {
