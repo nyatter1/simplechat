@@ -16,12 +16,14 @@
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.2); border-radius: 3px; }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="flex h-screen overflow-hidden">
+<body class="flex h-screen overflow-hidden text-sm">
     
     <!-- Sidebar -->
-    <div class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0">
+    <div class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 z-20 shadow-sm">
         <div class="p-6 border-b border-gray-100">
             <h1 class="text-xl font-bold text-gray-900 flex items-center">
                 <i data-lucide="shield-check" class="w-6 h-6 mr-2 text-blue-600"></i>
@@ -30,11 +32,17 @@
             <p class="text-xs text-gray-500 mt-1">Developer Access Only</p>
         </div>
         <nav class="flex-1 p-4 space-y-1">
-            <button id="navLogs" onclick="switchTab('logs')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors active">
-                <i data-lucide="scroll-text" class="w-5 h-5 mr-3"></i> Logs
+            <button id="navDashboard" onclick="switchTab('dashboard')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors active">
+                <i data-lucide="layout-dashboard" class="w-5 h-5 mr-3"></i> Dashboard
+            </button>
+            <button id="navNews" onclick="switchTab('news')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                <i data-lucide="newspaper" class="w-5 h-5 mr-3"></i> News
             </button>
             <button id="navMembers" onclick="switchTab('members')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
                 <i data-lucide="users" class="w-5 h-5 mr-3"></i> Members
+            </button>
+            <button id="navLogs" onclick="switchTab('logs')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                <i data-lucide="scroll-text" class="w-5 h-5 mr-3"></i> Logs
             </button>
             <button id="navSettings" onclick="switchTab('settings')" class="sidebar-item w-full flex items-center px-4 py-3 text-sm font-medium rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
                 <i data-lucide="settings" class="w-5 h-5 mr-3"></i> Settings
@@ -49,15 +57,85 @@
 
     <!-- Main Content -->
     <div class="flex-1 flex flex-col overflow-hidden bg-gray-50">
-        <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shadow-sm">
-            <h2 id="pageTitle" class="text-lg font-bold text-gray-800">System Logs</h2>
-            <div id="currentUserDisplay" class="text-sm font-medium text-gray-500">Loading...</div>
+        <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-8 shadow-sm shrink-0">
+            <h2 id="pageTitle" class="text-lg font-bold text-gray-800">Dashboard</h2>
+            <div class="flex items-center gap-4">
+                <div id="currentUserDisplay" class="text-sm font-medium text-gray-500">Loading...</div>
+                <div class="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                    <i data-lucide="user" class="w-4 h-4"></i>
+                </div>
+            </div>
         </header>
 
         <main class="flex-1 overflow-auto p-8">
             
+            <!-- DASHBOARD TAB -->
+            <div id="tab-dashboard" class="space-y-6 fade-in">
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center">
+                        <div class="p-3 rounded-full bg-blue-50 text-blue-600 mr-4"><i data-lucide="users" class="w-6 h-6"></i></div>
+                        <div><p class="text-xs text-gray-500 font-bold uppercase">Total Members</p><h3 id="statTotalUsers" class="text-2xl font-bold text-gray-900">...</h3></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center">
+                        <div class="p-3 rounded-full bg-green-50 text-green-600 mr-4"><i data-lucide="user-check" class="w-6 h-6"></i></div>
+                        <div><p class="text-xs text-gray-500 font-bold uppercase">Active Today</p><h3 id="statActiveToday" class="text-2xl font-bold text-gray-900">...</h3></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center">
+                        <div class="p-3 rounded-full bg-purple-50 text-purple-600 mr-4"><i data-lucide="message-square" class="w-6 h-6"></i></div>
+                        <div><p class="text-xs text-gray-500 font-bold uppercase">Total Messages</p><h3 id="statTotalMsgs" class="text-2xl font-bold text-gray-900">...</h3></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex items-center">
+                        <div class="p-3 rounded-full bg-orange-50 text-orange-600 mr-4"><i data-lucide="shield-alert" class="w-6 h-6"></i></div>
+                        <div><p class="text-xs text-gray-500 font-bold uppercase">Banned Users</p><h3 id="statBanned" class="text-2xl font-bold text-gray-900">...</h3></div>
+                    </div>
+                </div>
+
+                <!-- Broadcast Section -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-2 flex items-center"><i data-lucide="radio" class="w-5 h-5 mr-2 text-red-500"></i> System Broadcast</h3>
+                    <p class="text-sm text-gray-500 mb-4">Send a message to all connected users as "System Announcement".</p>
+                    <div class="flex gap-4">
+                        <input type="text" id="broadcastInput" class="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none" placeholder="Type your announcement here...">
+                        <button onclick="sendBroadcast()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center">
+                            <i data-lucide="send" class="w-4 h-4 mr-2"></i> Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NEWS TAB -->
+            <div id="tab-news" class="hidden space-y-6 fade-in">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        <div>
+                            <h3 class="text-lg font-bold text-gray-900">News Management</h3>
+                            <p class="text-sm text-gray-500">Manage announcements shown in the News feed.</p>
+                        </div>
+                        <button onclick="document.getElementById('createNewsForm').classList.toggle('hidden')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg text-xs flex items-center">
+                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i> Create Post
+                        </button>
+                    </div>
+                    
+                    <div id="createNewsForm" class="hidden bg-gray-50 p-6 border-b border-gray-200">
+                        <h4 class="font-bold text-gray-700 mb-4">New Post</h4>
+                        <div class="space-y-4">
+                            <textarea id="newsContent" class="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500" rows="3" placeholder="Post content (Markdown supported)..."></textarea>
+                            <input type="text" id="newsImageUrl" class="w-full p-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500" placeholder="Image URL (optional)">
+                            <div class="flex justify-end">
+                                <button onclick="createNewsPost()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg">Publish</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="newsListContainer" class="divide-y divide-gray-100">
+                        <div class="p-8 text-center text-gray-400">Loading news...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- LOGS TAB -->
-            <div id="tab-logs" class="space-y-4">
+            <div id="tab-logs" class="hidden space-y-4 fade-in">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
                         <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Recent Actions</h3>
@@ -70,20 +148,24 @@
             </div>
 
             <!-- MEMBERS TAB -->
-            <div id="tab-members" class="hidden space-y-4">
+            <div id="tab-members" class="hidden space-y-4 fade-in">
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
-                    <div class="p-4 border-b border-gray-100 flex gap-4 bg-gray-50/50">
-                        <div class="relative flex-1">
-                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
-                            <input type="text" id="memberSearch" placeholder="Search by username..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                    <div class="p-4 border-b border-gray-100 flex flex-wrap gap-4 bg-gray-50/50 items-center justify-between">
+                        <div class="flex gap-4 flex-1">
+                            <div class="relative flex-1 max-w-md">
+                                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+                                <input type="text" id="memberSearch" placeholder="Search by username..." class="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                            </div>
+                            <select id="memberFilter" class="px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                                <option value="all">All Users</option>
+                                <option value="recent">Recently Active</option>
+                                <option value="banned">Banned</option>
+                                <option value="developer">Developers</option>
+                            </select>
                         </div>
-                        <select id="memberFilter" class="px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm bg-white">
-                            <option value="all">All Users</option>
-                            <option value="recent">Recently Active</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="developer">Developers</option>
-                        </select>
+                        <button onclick="exportCSV()" class="flex items-center text-gray-600 hover:text-blue-600 font-medium text-sm transition-colors border border-gray-300 rounded-lg px-3 py-2 bg-white hover:bg-gray-50">
+                            <i data-lucide="download" class="w-4 h-4 mr-2"></i> Export CSV
+                        </button>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left">
@@ -91,8 +173,8 @@
                                 <tr>
                                     <th class="px-6 py-3 font-bold">User</th>
                                     <th class="px-6 py-3 font-bold">Role</th>
-                                    <th class="px-6 py-3 font-bold">Joined</th>
-                                    <th class="px-6 py-3 font-bold">Last Seen</th>
+                                    <th class="px-6 py-3 font-bold">Wallet</th>
+                                    <th class="px-6 py-3 font-bold">Status</th>
                                     <th class="px-6 py-3 font-bold text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -106,32 +188,74 @@
             </div>
 
             <!-- SETTINGS TAB -->
-            <div id="tab-settings" class="hidden max-w-2xl mx-auto space-y-6">
+            <div id="tab-settings" class="hidden max-w-4xl mx-auto space-y-6 fade-in">
+                
+                <!-- General Settings -->
                 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-                        <h3 class="text-lg font-bold text-gray-900">Global Settings</h3>
-                        <p class="text-sm text-gray-500">Changes here affect everyone immediately.</p>
+                        <h3 class="text-lg font-bold text-gray-900">General Configuration</h3>
                     </div>
                     <div class="p-6 space-y-6">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Website Title</label>
-                            <input type="text" id="settingTitle" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm" placeholder="SimpleConnect Chat">
-                            <p class="text-xs text-gray-400 mt-1">Appears in the browser tab.</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Favicon URL</label>
-                            <div class="flex gap-2">
-                                <input type="text" id="settingIcon" class="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm" placeholder="https://example.com/icon.png">
-                                <div class="w-10 h-10 rounded bg-gray-100 border flex items-center justify-center shrink-0">
-                                    <img id="iconPreview" src="" class="w-6 h-6 object-contain opacity-50">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Website Title</label>
+                                <input type="text" id="settingTitle" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Favicon URL</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settingIcon" class="flex-1 px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm">
+                                    <div class="w-10 h-10 rounded bg-gray-100 border flex items-center justify-center shrink-0">
+                                        <img id="iconPreview" src="" class="w-6 h-6 object-contain opacity-50">
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div class="pt-4 border-t flex justify-end">
-                            <button onclick="saveGlobalSettings()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition-colors">
-                                Save Changes
-                            </button>
+                        <div class="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div>
+                                <h4 class="font-bold text-gray-900">Maintenance Mode</h4>
+                                <p class="text-xs text-gray-500">Lock the app for non-admin users.</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="maintenanceToggle" class="sr-only peer">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
                         </div>
+                        <div class="flex justify-end">
+                            <button onclick="saveGlobalSettings()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition-colors">Save General</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Moderation -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                        <h3 class="text-lg font-bold text-gray-900">Moderation Filter</h3>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Banned Words (Comma separated)</label>
+                            <textarea id="badWordsInput" rows="3" class="w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-sm" placeholder="badword1, badword2, ..."></textarea>
+                        </div>
+                        <div class="flex justify-end">
+                            <button onclick="saveBadWords()" class="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-6 rounded-lg shadow-sm transition-colors">Update Filter</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danger Zone -->
+                <div class="bg-red-50 rounded-xl shadow-sm border border-red-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-red-100 bg-red-100/50">
+                        <h3 class="text-lg font-bold text-red-800 flex items-center"><i data-lucide="alert-triangle" class="w-5 h-5 mr-2"></i> Danger Zone</h3>
+                    </div>
+                    <div class="p-6 flex items-center justify-between">
+                        <div>
+                            <h4 class="font-bold text-red-900">Clear Global Chat</h4>
+                            <p class="text-xs text-red-700">Permanently delete all messages. This cannot be undone.</p>
+                        </div>
+                        <button onclick="confirmClearChat()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-sm transition-colors">
+                            Clear All Messages
+                        </button>
                     </div>
                 </div>
             </div>
@@ -139,12 +263,34 @@
         </main>
     </div>
 
+    <!-- Modals -->
+    <div id="walletModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 w-96 shadow-2xl">
+            <h3 class="text-lg font-bold mb-4">Manage Wallet</h3>
+            <p id="walletUserDisplay" class="text-sm text-gray-500 mb-4"></p>
+            <input type="hidden" id="walletUserId">
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-500">Coins</label>
+                    <input type="number" id="walletCoins" class="w-full border rounded p-2">
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-500">Gems</label>
+                    <input type="number" id="walletGems" class="w-full border rounded p-2">
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="document.getElementById('walletModal').classList.add('hidden')" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
+                    <button onclick="saveWallet()" class="px-4 py-2 bg-blue-600 text-white rounded font-bold">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, getDoc, getDocs, where, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, getDoc, getDocs, where, addDoc, serverTimestamp, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // Same Config
         const firebaseConfig = {
             apiKey: "AIzaSyDYI4Avd42wjJa3YOSKuGHhSCGgLFLZvik",
             authDomain: "presently-3babd.firebaseapp.com",
@@ -160,6 +306,7 @@
         const db = getFirestore(app);
         let currentUser = null;
         let allMembers = [];
+        let allNews = [];
 
         // Auth Check
         onAuthStateChanged(auth, async (user) => {
@@ -183,47 +330,24 @@
         });
 
         function initAdmin() {
-            // Logs Listener
-            const logsQ = query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(50));
-            onSnapshot(logsQ, (snapshot) => {
-                const container = document.getElementById('logsContainer');
-                if (snapshot.empty) {
-                    container.innerHTML = '<div class="p-8 text-center text-gray-400 text-sm">No logs found.</div>';
-                    return;
-                }
-                container.innerHTML = snapshot.docs.map(d => {
-                    const data = d.data();
-                    const time = data.timestamp ? new Date(data.timestamp.toMillis()).toLocaleString() : 'Just now';
-                    let icon = 'info';
-                    let color = 'text-gray-500 bg-gray-100';
-                    
-                    if(data.type === 'message_delete' || data.type === 'message_delete_all') { icon = 'trash-2'; color = 'text-red-600 bg-red-100'; }
-                    if(data.type === 'message_edit') { icon = 'pencil'; color = 'text-orange-600 bg-orange-100'; }
-                    if(data.type === 'rank_change') { icon = 'shield'; color = 'text-blue-600 bg-blue-100'; }
-                    if(data.type === 'profile_update') { icon = 'user'; color = 'text-green-600 bg-green-100'; }
-
-                    return `
-                        <div class="p-4 flex items-start space-x-4 hover:bg-gray-50 transition-colors">
-                            <div class="w-8 h-8 rounded-full flex items-center justify-center ${color} shrink-0">
-                                <i data-lucide="${icon}" class="w-4 h-4"></i>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-sm font-medium text-gray-900">
-                                    <span class="font-bold">${data.username || 'Unknown'}</span>: ${data.details}
-                                </p>
-                                <p class="text-xs text-gray-400 mt-0.5">${time}</p>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                lucide.createIcons();
+            // Dashboard Listeners
+            onSnapshot(collection(db, "users"), (snap) => {
+                allMembers = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                updateDashboardStats();
+                renderMembers();
+            });
+            
+            onSnapshot(collection(db, "messages"), (snap) => {
+                document.getElementById('statTotalMsgs').innerText = snap.size;
             });
 
-            // Members Listener
-            const membersQ = query(collection(db, "users"), orderBy("joinedAt", "desc"), limit(100));
-            onSnapshot(membersQ, (snapshot) => {
-                allMembers = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
-                renderMembers();
+            onSnapshot(query(collection(db, "logs"), orderBy("timestamp", "desc"), limit(50)), (snapshot) => {
+                renderLogs(snapshot);
+            });
+
+            onSnapshot(query(collection(db, "news"), orderBy("timestamp", "desc")), (snapshot) => {
+                allNews = snapshot.docs.map(d => ({id: d.id, ...d.data()}));
+                renderNews();
             });
 
             // Settings Load
@@ -233,116 +357,278 @@
                     document.getElementById('settingTitle').value = d.title || '';
                     document.getElementById('settingIcon').value = d.icon || '';
                     document.getElementById('iconPreview').src = d.icon || '';
+                    document.getElementById('maintenanceToggle').checked = d.maintenance || false;
+                    document.getElementById('badWordsInput').value = (d.bannedWords || []).join(', ');
                 }
             });
 
-            // Setup Search/Filter
+            // Setup UI Events
             document.getElementById('memberSearch').addEventListener('input', renderMembers);
             document.getElementById('memberFilter').addEventListener('change', renderMembers);
-            document.getElementById('settingIcon').addEventListener('input', (e) => {
-                document.getElementById('iconPreview').src = e.target.value;
-            });
+            document.getElementById('settingIcon').addEventListener('input', (e) => document.getElementById('iconPreview').src = e.target.value);
         }
 
+        function updateDashboardStats() {
+            document.getElementById('statTotalUsers').innerText = allMembers.length;
+            const today = new Date();
+            const activeToday = allMembers.filter(u => {
+                if(!u.lastSeen) return false;
+                const d = u.lastSeen.toDate ? u.lastSeen.toDate() : new Date(u.lastSeen);
+                return d.getDate() === today.getDate() && d.getMonth() === today.getMonth();
+            }).length;
+            document.getElementById('statActiveToday').innerText = activeToday;
+            document.getElementById('statBanned').innerText = allMembers.filter(u => u.banned).length;
+        }
+
+        // --- DASHBOARD ACTIONS ---
+        window.sendBroadcast = async () => {
+            const text = document.getElementById('broadcastInput').value.trim();
+            if(!text) return;
+            if(confirm("Send this broadcast to EVERYONE?")) {
+                try {
+                    await addDoc(collection(db, "messages"), {
+                        text: `📢 **SYSTEM BROADCAST**: ${text}`,
+                        senderId: 'system_broadcast',
+                        senderName: 'SYSTEM',
+                        senderColor: 'bg-red-600',
+                        timestamp: serverTimestamp(),
+                        system: true
+                    });
+                    document.getElementById('broadcastInput').value = '';
+                    alert("Broadcast sent.");
+                } catch(e) { alert(e.message); }
+            }
+        };
+
+        // --- NEWS ACTIONS ---
+        function renderNews() {
+            const container = document.getElementById('newsListContainer');
+            container.innerHTML = allNews.map(n => `
+                <div class="p-6 flex items-start gap-4">
+                    <div class="h-16 w-16 bg-gray-200 rounded-lg shrink-0 overflow-hidden">
+                        ${n.image ? `<img src="${n.image}" class="h-full w-full object-cover">` : '<div class="h-full w-full flex items-center justify-center text-gray-400"><i data-lucide="image" class="w-6 h-6"></i></div>'}
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-bold text-gray-900">${n.text ? n.text.substring(0, 100) + '...' : 'Image Post'}</p>
+                                <p class="text-xs text-gray-500">By ${n.authorName} • ${n.timestamp ? new Date(n.timestamp.toMillis()).toLocaleDateString() : ''}</p>
+                            </div>
+                            <button onclick="deleteNews('${n.id}')" class="text-red-500 hover:text-red-700 p-1"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        window.createNewsPost = async () => {
+            const text = document.getElementById('newsContent').value.trim();
+            const image = document.getElementById('newsImageUrl').value.trim();
+            if(!text && !image) return;
+            try {
+                await addDoc(collection(db, "news"), {
+                    text, image,
+                    authorId: currentUser.id,
+                    authorName: currentUser.username,
+                    authorRole: 'developer',
+                    timestamp: serverTimestamp(),
+                    likes: []
+                });
+                document.getElementById('newsContent').value = '';
+                document.getElementById('newsImageUrl').value = '';
+                document.getElementById('createNewsForm').classList.add('hidden');
+            } catch(e) { alert(e.message); }
+        };
+
+        window.deleteNews = async (id) => {
+            if(confirm("Delete this news post?")) {
+                await deleteDoc(doc(db, "news", id));
+            }
+        };
+
+        // --- MEMBER ACTIONS ---
         function renderMembers() {
             const search = document.getElementById('memberSearch').value.toLowerCase();
             const filter = document.getElementById('memberFilter').value;
             const container = document.getElementById('membersTableBody');
             
-            let list = allMembers.filter(u => 
-                (u.username || '').toLowerCase().includes(search)
-            );
+            let list = allMembers.filter(u => (u.username || '').toLowerCase().includes(search));
 
-            if (filter === 'recent') {
-                list.sort((a,b) => (b.lastSeen?.toMillis() || 0) - (a.lastSeen?.toMillis() || 0));
-            } else if (filter === 'male') {
-                list = list.filter(u => u.gender === 'Male');
-            } else if (filter === 'female') {
-                list = list.filter(u => u.gender === 'Female');
-            } else if (filter === 'developer') {
-                list = list.filter(u => u.role === 'developer');
-            }
+            if (filter === 'recent') list.sort((a,b) => (b.lastSeen?.toMillis() || 0) - (a.lastSeen?.toMillis() || 0));
+            if (filter === 'banned') list = list.filter(u => u.banned);
+            if (filter === 'developer') list = list.filter(u => u.role === 'developer');
 
             container.innerHTML = list.map(u => {
-                const joined = u.joinedAt ? new Date(u.joinedAt.toMillis()).toLocaleDateString() : 'N/A';
-                const lastSeen = u.lastSeen ? new Date(u.lastSeen.toMillis()).toLocaleString() : 'Never';
+                const lastSeen = u.lastSeen ? new Date(u.lastSeen.toMillis ? u.lastSeen.toMillis() : u.lastSeen).toLocaleString() : 'Never';
                 const avatar = u.avatarImage ? `<img src="${u.avatarImage}" class="w-8 h-8 rounded-full object-cover">` : `<div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">${u.username.substring(0,2).toUpperCase()}</div>`;
                 
                 return `
-                    <tr class="bg-white border-b hover:bg-gray-50 transition-colors">
+                    <tr class="border-b transition-colors ${u.banned ? 'bg-red-50 hover:bg-red-100' : 'bg-white hover:bg-gray-50'}">
                         <td class="px-6 py-4 flex items-center space-x-3">
                             ${avatar}
-                            <span class="font-medium text-gray-900">${u.username}</span>
+                            <div>
+                                <div class="font-medium text-gray-900">${u.username}</div>
+                                <div class="text-[10px] text-gray-400">${u.email || 'No Email'}</div>
+                            </div>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 capitalize">
-                                ${u.role || 'Member'}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 capitalize border border-gray-200 cursor-pointer hover:bg-gray-200" onclick="promptRank('${u.id}', '${u.username}')">
+                                ${u.role || 'Member'} <i data-lucide="edit-2" class="w-3 h-3 ml-1 opacity-50"></i>
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-gray-500">${joined}</td>
-                        <td class="px-6 py-4 text-gray-500">${lastSeen}</td>
+                        <td class="px-6 py-4 text-xs font-mono">
+                            <div class="text-yellow-600">🪙 ${u.coins || 0}</div>
+                            <div class="text-purple-600">💎 ${u.gems || 0}</div>
+                        </td>
+                        <td class="px-6 py-4 text-xs text-gray-500">
+                            ${u.banned ? '<span class="text-red-600 font-bold">BANNED</span>' : lastSeen}
+                        </td>
                         <td class="px-6 py-4 text-right">
-                             <button onclick="promptRank('${u.id}', '${u.username}')" class="text-blue-600 hover:text-blue-900 text-xs font-bold hover:underline">Change Rank</button>
+                             <div class="flex justify-end gap-2">
+                                <button onclick="openWalletModal('${u.id}')" class="p-1.5 rounded bg-blue-50 text-blue-600 hover:bg-blue-100" title="Edit Wallet"><i data-lucide="wallet" class="w-4 h-4"></i></button>
+                                <button onclick="toggleBan('${u.id}', ${u.banned})" class="p-1.5 rounded ${u.banned ? 'bg-green-50 text-green-600' : 'bg-orange-50 text-orange-600'} hover:opacity-80" title="${u.banned ? 'Unban' : 'Ban'}"><i data-lucide="${u.banned ? 'check-circle' : 'ban'}" class="w-4 h-4"></i></button>
+                                <button onclick="deleteUser('${u.id}')" class="p-1.5 rounded bg-red-50 text-red-600 hover:bg-red-100" title="Delete User"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                             </div>
                         </td>
                     </tr>
                 `;
             }).join('');
+            lucide.createIcons();
         }
+
+        window.toggleBan = async (uid, currentStatus) => {
+            if(confirm(currentStatus ? "Unban user?" : "Ban user? They won't be able to log in.")) {
+                await updateDoc(doc(db, "users", uid), { banned: !currentStatus });
+            }
+        };
+
+        window.deleteUser = async (uid) => {
+            if(confirm("PERMANENTLY DELETE USER? This cannot be undone.")) {
+                await deleteDoc(doc(db, "users", uid));
+                alert("User deleted.");
+            }
+        };
+
+        window.openWalletModal = (uid) => {
+            const u = allMembers.find(m => m.id === uid);
+            if(!u) return;
+            document.getElementById('walletUserId').value = uid;
+            document.getElementById('walletUserDisplay').innerText = `Adjusting balance for ${u.username}`;
+            document.getElementById('walletCoins').value = u.coins || 0;
+            document.getElementById('walletGems').value = u.gems || 0;
+            document.getElementById('walletModal').classList.remove('hidden');
+            document.getElementById('walletModal').classList.add('flex');
+        };
+
+        window.saveWallet = async () => {
+            const uid = document.getElementById('walletUserId').value;
+            const coins = parseInt(document.getElementById('walletCoins').value);
+            const gems = parseInt(document.getElementById('walletGems').value);
+            await updateDoc(doc(db, "users", uid), { coins, gems });
+            document.getElementById('walletModal').classList.add('hidden');
+            document.getElementById('walletModal').classList.remove('flex');
+        };
 
         window.promptRank = async (uid, name) => {
             const newRank = prompt(`Enter new rank for ${name}:`, "vip");
             if (newRank) {
                 try {
                     await updateDoc(doc(db, "users", uid), { role: newRank.toLowerCase() });
-                    
-                    // Log manually since this is admin action
-                    await addDoc(collection(db, "logs"), {
-                        type: 'rank_change',
-                        userId: currentUser.id,
-                        username: currentUser.username,
-                        details: `Admin changed ${name}'s rank to ${newRank}`,
-                        timestamp: serverTimestamp()
-                    });
-                    
-                    // Send notification to user
-                    await addDoc(collection(db, "notifications"), {
-                        toUserId: uid,
-                        type: 'rank',
-                        content: `Your rank has changed to: ${newRank}`,
-                        fromUserId: currentUser.id,
-                        fromUsername: 'System',
-                        read: false,
-                        timestamp: serverTimestamp()
-                    });
-
-                    alert("Rank updated.");
-                } catch(e) { alert("Error: " + e.message); }
+                    await addDoc(collection(db, "logs"), { type: 'rank_change', userId: currentUser.id, username: currentUser.username, details: `Changed ${name} to ${newRank}`, timestamp: serverTimestamp() });
+                } catch(e) { alert(e.message); }
             }
         };
 
+        window.exportCSV = () => {
+            let csvContent = "data:text/csv;charset=utf-8,ID,Username,Email,Role,Coins,Gems,LastSeen\n";
+            allMembers.forEach(u => {
+                const ls = u.lastSeen ? new Date(u.lastSeen.toMillis ? u.lastSeen.toMillis() : u.lastSeen).toISOString() : '';
+                csvContent += `${u.id},${u.username},${u.email},${u.role},${u.coins},${u.gems},${ls}\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "members_export.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+
+        // --- SETTINGS ACTIONS ---
         window.saveGlobalSettings = async () => {
             const title = document.getElementById('settingTitle').value.trim();
             const icon = document.getElementById('settingIcon').value.trim();
+            const maintenance = document.getElementById('maintenanceToggle').checked;
             
             try {
-                await setDoc(doc(db, "settings", "global"), { title, icon }, { merge: true });
-                alert("Global settings updated.");
+                await setDoc(doc(db, "settings", "global"), { title, icon, maintenance }, { merge: true });
+                alert("General settings saved.");
             } catch(e) { alert("Error: " + e.message); }
+        };
+
+        window.saveBadWords = async () => {
+            const val = document.getElementById('badWordsInput').value;
+            const words = val.split(',').map(s => s.trim()).filter(s => s);
+            try {
+                await setDoc(doc(db, "settings", "global"), { bannedWords: words }, { merge: true });
+                alert("Filter updated.");
+            } catch(e) { alert(e.message); }
+        };
+
+        window.confirmClearChat = async () => {
+            const confirmation = prompt("Type 'DELETE' to confirm clearing ALL chat messages.");
+            if (confirmation === 'DELETE') {
+                const q = query(collection(db, "messages"), limit(500)); // Batch limit
+                const snapshot = await getDocs(q);
+                const batch = writeBatch(db);
+                snapshot.docs.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+                
+                await addDoc(collection(db, "logs"), { type: 'message_delete_all', userId: currentUser.id, username: currentUser.username, details: `Cleared ${snapshot.size} messages`, timestamp: serverTimestamp() });
+                alert(`Cleared ${snapshot.size} messages (Repeat if more exist).`);
+            }
+        };
+
+        // --- LOGS ---
+        function renderLogs(snapshot) {
+            const container = document.getElementById('logsContainer');
+            if (snapshot.empty) { container.innerHTML = '<div class="p-8 text-center text-gray-400 text-sm">No logs found.</div>'; return; }
+            container.innerHTML = snapshot.docs.map(d => {
+                const data = d.data();
+                const time = data.timestamp ? new Date(data.timestamp.toMillis()).toLocaleString() : 'Just now';
+                let icon = 'info';
+                let color = 'text-gray-500 bg-gray-100';
+                if(data.type === 'message_delete_all') { icon = 'trash-2'; color = 'text-red-600 bg-red-100'; }
+                if(data.type === 'rank_change') { icon = 'shield'; color = 'text-blue-600 bg-blue-100'; }
+                return `
+                    <div class="p-4 flex items-start space-x-4 hover:bg-gray-50 transition-colors">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center ${color} shrink-0"><i data-lucide="${icon}" class="w-4 h-4"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900"><span class="font-bold">${data.username || 'System'}</span>: ${data.details}</p>
+                            <p class="text-xs text-gray-400 mt-0.5">${time}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            lucide.createIcons();
         }
 
         // Tab Switching
         window.switchTab = (tabId) => {
-            document.querySelectorAll('main > div').forEach(d => d.classList.add('hidden'));
+            ['dashboard', 'news', 'members', 'logs', 'settings'].forEach(t => document.getElementById(`tab-${t}`).classList.add('hidden'));
             document.getElementById(`tab-${tabId}`).classList.remove('hidden');
             
             document.querySelectorAll('.sidebar-item').forEach(b => b.classList.remove('active'));
-            const navBtn = document.getElementById(`nav${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`);
-            if(navBtn) navBtn.classList.add('active');
+            document.getElementById(`nav${tabId.charAt(0).toUpperCase() + tabId.slice(1)}`).classList.add('active');
 
-            const titles = { 'logs': 'System Logs', 'members': 'Member Management', 'settings': 'Global Configuration' };
+            const titles = { 'dashboard': 'Dashboard', 'news': 'News', 'members': 'Members', 'logs': 'Logs', 'settings': 'Settings' };
             document.getElementById('pageTitle').innerText = titles[tabId];
         };
 
+        // Init with Dashboard
         if(window.lucide) window.lucide.createIcons();
     </script>
 </body>
