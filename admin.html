@@ -142,7 +142,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, getDoc, getDocs, where } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc, getDoc, getDocs, where, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // Same Config
         const firebaseConfig = {
@@ -294,14 +294,27 @@
             if (newRank) {
                 try {
                     await updateDoc(doc(db, "users", uid), { role: newRank.toLowerCase() });
+                    
                     // Log manually since this is admin action
                     await addDoc(collection(db, "logs"), {
                         type: 'rank_change',
                         userId: currentUser.id,
                         username: currentUser.username,
                         details: `Admin changed ${name}'s rank to ${newRank}`,
-                        timestamp: new Date()
+                        timestamp: serverTimestamp()
                     });
+                    
+                    // Send notification to user
+                    await addDoc(collection(db, "notifications"), {
+                        toUserId: uid,
+                        type: 'rank',
+                        content: `Your rank has changed to: ${newRank}`,
+                        fromUserId: currentUser.id,
+                        fromUsername: 'System',
+                        read: false,
+                        timestamp: serverTimestamp()
+                    });
+
                     alert("Rank updated.");
                 } catch(e) { alert("Error: " + e.message); }
             }
