@@ -22,9 +22,11 @@
             --text-main: #111827;
             --msg-bubble-me: #2563eb;
             --msg-text-me: #ffffff;
+            --bg-input: #f9fafb;
+            --border-color: #e5e7eb;
         }
 
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
@@ -42,7 +44,7 @@
         }
 
         /* Markdown Styles within Chat Bubbles */
-        .markdown-content p { margin-bottom: 0.5em; }
+        .markdown-content p { margin-bottom: 0.4em; }
         .markdown-content p:last-child { margin-bottom: 0; }
         .markdown-content strong { font-weight: 700; }
         .markdown-content em { font-style: italic; }
@@ -53,27 +55,28 @@
             font-family: monospace; 
             font-size: 0.9em;
         }
-        .bg-me .markdown-content code {
-            background: rgba(255,255,255,0.2);
-        }
+        .bg-me .markdown-content code { background: rgba(255,255,255,0.2); }
         .markdown-content pre {
             background: rgba(0,0,0,0.1);
-            padding: 0.5em;
+            padding: 0.4em;
             border-radius: 4px;
             overflow-x: auto;
-            margin: 0.5em 0;
+            margin: 0.4em 0;
+            font-size: 0.85em;
         }
-        .bg-me .markdown-content pre {
-            background: rgba(0,0,0,0.2);
-        }
-        .markdown-content ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
-        .markdown-content ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
-        .markdown-content blockquote { border-left: 3px solid rgba(0,0,0,0.2); padding-left: 0.5em; margin-left: 0.2em; opacity: 0.8; }
+        .bg-me .markdown-content pre { background: rgba(0,0,0,0.2); }
+        .markdown-content ul { list-style-type: disc; padding-left: 1.2em; margin-bottom: 0.4em; }
+        .markdown-content ol { list-style-type: decimal; padding-left: 1.2em; margin-bottom: 0.4em; }
+        .markdown-content blockquote { border-left: 2px solid rgba(0,0,0,0.2); padding-left: 0.4em; margin-left: 0.2em; opacity: 0.8; }
         .markdown-content a { text-decoration: underline; }
 
-        /* Dynamic Theme Classes */
+        /* Dynamic Theme Classes - Scoped for Live Preview support */
+        .theme-scope {
+            background-color: var(--bg-app);
+            color: var(--text-main);
+        }
         .theme-bg-app { background-color: var(--bg-app); color: var(--text-main); }
-        .theme-bg-sidebar { background-color: var(--bg-sidebar); border-color: rgba(0,0,0,0.05); }
+        .theme-bg-sidebar { background-color: var(--bg-sidebar); border-color: var(--border-color); }
         .theme-text-main { color: var(--text-main); }
         .theme-primary { background-color: var(--primary); color: white; }
         .theme-primary:hover { background-color: var(--primary-hover); }
@@ -81,15 +84,16 @@
         .theme-border-primary { border-color: var(--primary); }
         
         .bubble-me { background-color: var(--msg-bubble-me); color: var(--msg-text-me); }
-        .bubble-other { background-color: var(--bg-sidebar); color: var(--text-main); border: 1px solid rgba(0,0,0,0.05); }
+        .bubble-other { background-color: var(--bg-sidebar); color: var(--text-main); border: 1px solid var(--border-color); }
+        .theme-input { background-color: var(--bg-input); color: var(--text-main); border-color: var(--border-color); }
     </style>
 </head>
-<body class="theme-bg-app font-sans antialiased h-screen overflow-hidden">
+<body class="theme-bg-app font-sans antialiased h-screen overflow-hidden text-sm">
     <div id="app" class="h-full w-full"></div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -112,7 +116,14 @@
         let onlineUsers = [];
         let editingMessageId = null; 
         let lastTypingSent = 0;
+        
+        // Modal States
         let showThemeModal = false;
+        let previewThemeId = 0;
+        let showProfileModal = false;
+        let viewingProfileId = null;
+        let viewingProfileData = null;
+
         let currentThemeId = 0;
         let themes = [];
 
@@ -121,31 +132,73 @@
             'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-green-500', 
             'bg-emerald-500', 'bg-teal-500', 'bg-cyan-500', 'bg-blue-500', 
             'bg-indigo-500', 'bg-violet-500', 'bg-purple-500', 'bg-fuchsia-500', 
-            'bg-pink-500', 'bg-rose-500'
+            'bg-pink-500', 'bg-rose-500', 'bg-slate-600', 'bg-stone-500'
         ];
 
-        // --- THEME GENERATOR ---
+        // --- THEME DEFINITIONS ---
         function generateThemes() {
-            const list = [];
-            list.push({ id: 0, name: 'Standard Blue', primary: '#2563eb', bgApp: '#f3f4f6', bgSidebar: '#ffffff', text: '#111827' });
-            
-            for (let i = 1; i < 100; i++) {
-                const hue = Math.floor((i * 11) % 360); // Spread hues
-                const isDark = i % 3 === 0; 
+            // Helper to build theme object
+            const t = (id, name, prim, bgApp, bgSide, txt, bord = 'rgba(0,0,0,0.08)', bgInp = '#f9fafb') => ({
+                id, name, primary: prim, primaryHover: prim, bgApp, bgSidebar: bgSide, text: txt, borderColor: bord, bgInput: bgInp
+            });
+
+            const list = [
+                // Basics
+                t(0, 'Standard Blue', '#2563eb', '#f3f4f6', '#ffffff', '#111827'),
+                t(1, 'Dark Mode', '#3b82f6', '#0f172a', '#1e293b', '#f8fafc', '#334155', '#334155'),
+                t(2, 'Midnight', '#6366f1', '#111827', '#1f2937', '#f3f4f6', '#374151', '#374151'),
+                t(3, 'Forest', '#059669', '#ecfdf5', '#ffffff', '#064e3b'),
+                t(4, 'Deep Forest', '#10b981', '#064e3b', '#065f46', '#ecfdf5', '#047857', '#064e3b'),
                 
-                const primary = `hsl(${hue}, 70%, 50%)`;
-                const hover = `hsl(${hue}, 80%, 40%)`;
-                
-                list.push({
-                    id: i,
-                    name: `Theme ${i}`,
-                    primary: primary,
-                    primaryHover: hover,
-                    bgApp: isDark ? `hsl(${hue}, 20%, 8%)` : `hsl(${hue}, 30%, 96%)`,
-                    bgSidebar: isDark ? `hsl(${hue}, 20%, 12%)` : '#ffffff',
-                    text: isDark ? '#f3f4f6' : '#111827'
-                });
-            }
+                // Characters / Pop Culture
+                t(5, 'Spiderman', '#dc2626', '#1e3a8a', '#172554', '#f0f9ff', '#1e40af', '#1d4ed8'),
+                t(6, 'Hulk', '#65a30d', '#4c1d95', '#5b21b6', '#f7fee7', '#7c3aed', '#6d28d9'),
+                t(7, 'Iron Man', '#eab308', '#7f1d1d', '#991b1b', '#fefce8', '#b91c1c', '#7f1d1d'),
+                t(8, 'Barbie', '#ec4899', '#fdf2f8', '#fff1f2', '#831843'),
+                t(9, 'Batman', '#fbbf24', '#000000', '#171717', '#f5f5f5', '#262626', '#262626'),
+                t(10, 'Joker', '#a855f7', '#172554', '#1e3a8a', '#faf5ff', '#a855f7', '#1e40af'),
+                t(11, 'Matrix', '#22c55e', '#000000', '#0a0a0a', '#4ade80', '#14532d', '#052e16'),
+                t(12, 'Dracula', '#e11d48', '#0f172a', '#1e293b', '#ffe4e6', '#334155', '#334155'),
+                t(13, 'Bumblebee', '#facc15', '#18181b', '#27272a', '#fefce8', '#3f3f46', '#27272a'),
+                t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
+
+                // Aesthetics
+                t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
+                t(16, 'Vaporwave', '#d8b4fe', '#fdf4ff', '#fae8ff', '#581c87'),
+                t(17, 'Sunset', '#f97316', '#fff7ed', '#fffaf0', '#7c2d12'),
+                t(18, 'Ocean', '#06b6d4', '#ecfeff', '#f0f9ff', '#0e7490'),
+                t(19, 'Lavender', '#8b5cf6', '#f5f3ff', '#ffffff', '#4c1d95'),
+                t(20, 'Coffee', '#78350f', '#fffbeb', '#fef3c7', '#451a03'),
+                t(21, 'Slate', '#64748b', '#f1f5f9', '#ffffff', '#0f172a'),
+                t(22, 'Monochrome', '#525252', '#f5f5f5', '#ffffff', '#000000'),
+                t(23, 'Terminal', '#4ade80', '#000000', '#111111', '#4ade80', '#333333', '#111111'),
+                t(24, 'Pastel Pink', '#f9a8d4', '#fff1f2', '#ffffff', '#831843'),
+                t(25, 'Pastel Blue', '#93c5fd', '#eff6ff', '#ffffff', '#1e3a8a'),
+                t(26, 'Mint', '#6ee7b7', '#f0fdf4', '#ffffff', '#064e3b'),
+                t(27, 'Peach', '#fdba74', '#fff7ed', '#ffffff', '#7c2d12'),
+                t(28, 'Lemon', '#fde047', '#fefce8', '#ffffff', '#713f12'),
+                t(29, 'Ruby', '#be123c', '#fff1f2', '#ffe4e6', '#881337'),
+                t(30, 'Sapphire', '#1d4ed8', '#eff6ff', '#dbeafe', '#1e3a8a'),
+                t(31, 'Emerald', '#059669', '#ecfdf5', '#d1fae5', '#064e3b'),
+                t(32, 'Amethyst', '#7c3aed', '#f5f3ff', '#ede9fe', '#4c1d95'),
+                t(33, 'Topaz', '#eab308', '#fefce8', '#fef9c3', '#713f12'),
+                t(34, 'Rose Gold', '#fb7185', '#fff1f2', '#fff0f7', '#881337'),
+                t(35, 'Space Gray', '#4b5563', '#111827', '#1f2937', '#f3f4f6', '#374151', '#374151'),
+                t(36, 'Navy', '#1e3a8a', '#f1f5f9', '#ffffff', '#0f172a'),
+                t(37, 'Berry', '#be185d', '#fdf2f8', '#ffffff', '#831843'),
+                t(38, 'Teal', '#0d9488', '#f0fdfa', '#ffffff', '#134e4a'),
+                t(39, 'Cyan', '#0891b2', '#ecfeff', '#ffffff', '#164e63'),
+                t(40, 'Lime', '#65a30d', '#f7fee7', '#ffffff', '#365314'),
+                t(41, 'Orange', '#ea580c', '#fff7ed', '#ffffff', '#7c2d12'),
+                t(42, 'Amber', '#d97706', '#fffbeb', '#ffffff', '#78350f'),
+                t(43, 'Violet', '#7c3aed', '#f5f3ff', '#ffffff', '#4c1d95'),
+                t(44, 'Fuchsia', '#c026d3', '#fdf4ff', '#ffffff', '#701a75'),
+                t(45, 'Crimson', '#9f1239', '#fff1f2', '#ffffff', '#881337'),
+                t(46, 'Chocolate', '#3f2c22', '#fdf8f6', '#ffffff', '#281c16'),
+                t(47, 'Olive', '#3f6212', '#f7fee7', '#ffffff', '#1a2e05'),
+                t(48, 'Sky', '#0ea5e9', '#f0f9ff', '#ffffff', '#0c4a6e'),
+                t(49, 'Neutral', '#525252', '#e5e5e5', '#f5f5f5', '#171717'),
+            ];
             return list;
         }
 
@@ -158,10 +211,12 @@
             root.style.setProperty('--bg-app', theme.bgApp);
             root.style.setProperty('--bg-sidebar', theme.bgSidebar);
             root.style.setProperty('--text-main', theme.text);
+            root.style.setProperty('--bg-input', theme.bgInput || '#f9fafb');
+            root.style.setProperty('--border-color', theme.borderColor || 'rgba(0,0,0,0.08)');
             
             // Adjust message bubble contrast
             root.style.setProperty('--msg-bubble-me', theme.primary);
-            root.style.setProperty('--msg-text-me', '#ffffff');
+            root.style.setProperty('--msg-text-me', '#ffffff'); // Simplified white text for me-bubbles
 
             currentThemeId = theme.id;
             localStorage.setItem('chat_theme_id', theme.id);
@@ -178,6 +233,12 @@
                 .replace(/'/g, "&#039;");
         }
 
+        function formatDate(timestamp) {
+            if (!timestamp) return 'Unknown';
+            const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
         // --- APP INITIALIZATION ---
         function init() {
             themes = generateThemes();
@@ -191,7 +252,9 @@
 
             // Restore Theme
             const storedTheme = localStorage.getItem('chat_theme_id');
-            applyTheme(storedTheme ? parseInt(storedTheme) : 0);
+            const initTheme = storedTheme ? parseInt(storedTheme) : 0;
+            applyTheme(initTheme);
+            previewThemeId = initTheme;
 
             render();
             
@@ -211,7 +274,9 @@
                 await setDoc(doc(db, "users", currentUser.id), {
                     username: currentUser.username,
                     color: currentUser.color,
-                    lastSeen: serverTimestamp()
+                    lastSeen: serverTimestamp(),
+                    // Ensure joinedAt is kept if it exists, otherwise it might be lost in a set without merge:true full check, but merge:true handles it.
+                    // If we want to backfill joinedAt for old users we'd do it here, but let's assume login handles it.
                 }, { merge: true });
             } catch (e) {
                 console.error("Presence update failed", e);
@@ -219,41 +284,35 @@
         }
 
         function setupFirestoreListeners() {
-            // Messages Listener - UPDATED: Use 'desc' to get LATEST 100 messages, then reverse locally
+            // Messages Listener
             const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(100));
             onSnapshot(q, (snapshot) => {
                 messages = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data(),
-                    // Convert Firestore timestamp to millis
                     timestamp: doc.data().timestamp ? doc.data().timestamp.toMillis() : Date.now()
-                })).reverse(); // Reverse to chronological order
+                })).reverse();
                 renderChatMessages();
             });
 
-            // Online Users Listener
+            // Online Users
             const usersQ = query(collection(db, "users"));
             onSnapshot(usersQ, (snapshot) => {
                 const now = Date.now();
-                // Consider online if seen in last 2 minutes (allow some buffer)
-                const cutoff = now - (2 * 60 * 1000);
+                const cutoff = now - (2 * 60 * 1000); // 2 mins
                 
                 const active = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
                     if (data.lastSeen && data.lastSeen.toMillis() > cutoff) {
-                        active.push({
-                            id: doc.id,
-                            ...data
-                        });
+                        active.push({ id: doc.id, ...data });
                     }
                 });
-                // Sort online users by name
                 onlineUsers = active.sort((a,b) => a.username.localeCompare(b.username));
-                renderRightSidebar(); // Update RIGHT sidebar with list
+                renderRightSidebar();
             });
 
-            // Typing Listener
+            // Typing
             const typingQ = query(collection(db, "typing"));
             onSnapshot(typingQ, (snapshot) => {
                 const now = Date.now();
@@ -267,8 +326,6 @@
                 typingUsers = newTyping;
                 updateTypingUI();
             });
-
-            // Cleanup typing periodically
             setInterval(updateTypingUI, 1000);
         }
 
@@ -276,76 +333,88 @@
         async function handleGlobalClicks(e) {
             const target = e.target;
             
-            // Start Edit
-            const editBtn = target.closest('.btn-start-edit');
-            if (editBtn) {
-                editingMessageId = editBtn.dataset.id;
-                renderChatMessages();
-                return;
-            }
-
-            // Delete
-            const deleteBtn = target.closest('.btn-delete');
-            if (deleteBtn) {
-                if(confirm('Are you sure you want to delete this message?')) {
-                    const id = deleteBtn.dataset.id;
-                    try {
-                        await deleteDoc(doc(db, "messages", id));
-                        // Optimistic update handled by snapshot
-                    } catch (err) {
-                        console.error("Error deleting", err);
-                        alert("Failed to delete message");
-                    }
+            // User Profile Click
+            const userTrigger = target.closest('.user-profile-trigger');
+            if (userTrigger) {
+                e.preventDefault();
+                const userId = userTrigger.dataset.userId;
+                if (userId) {
+                    await openProfileModal(userId);
                 }
                 return;
             }
 
-            // Cancel Edit
-            const cancelBtn = target.closest('.btn-cancel-edit');
-            if (cancelBtn) {
-                editingMessageId = null;
-                renderChatMessages();
-                return;
+            // Message Actions
+            const editBtn = target.closest('.btn-start-edit');
+            if (editBtn) { editingMessageId = editBtn.dataset.id; renderChatMessages(); return; }
+
+            const deleteBtn = target.closest('.btn-delete');
+            if (deleteBtn && confirm('Delete this message?')) {
+                await deleteDoc(doc(db, "messages", deleteBtn.dataset.id)); return;
             }
 
-            // Save Edit
+            const cancelBtn = target.closest('.btn-cancel-edit');
+            if (cancelBtn) { editingMessageId = null; renderChatMessages(); return; }
+
             const saveBtn = target.closest('.btn-save-edit');
             if (saveBtn) {
                 const id = saveBtn.dataset.id;
                 const input = document.querySelector(`.edit-input[data-id="${id}"]`);
                 if (input && input.value.trim()) {
-                    const newText = input.value.trim();
-                    try {
-                        await updateDoc(doc(db, "messages", id), {
-                            text: newText,
-                            edited: true
-                        });
-                        editingMessageId = null;
-                        // Render will happen on snapshot update
-                    } catch (err) {
-                        console.error("Error updating", err);
-                        alert("Failed to update message");
-                    }
+                    await updateDoc(doc(db, "messages", id), { text: input.value.trim(), edited: true });
+                    editingMessageId = null;
                 }
                 return;
             }
 
-            // Theme Modal
+            // Theme Modal Actions
             if (target.closest('#themeBtn')) {
                 showThemeModal = true;
+                previewThemeId = currentThemeId; // Reset preview to current
                 renderThemeModal();
             }
             if (target.closest('#closeThemeBtn') || target.closest('#themeOverlay') === target) {
                 showThemeModal = false;
                 renderThemeModal();
             }
-            
-            // Select Theme
-            const themeOption = target.closest('.theme-option');
-            if (themeOption) {
-                applyTheme(themeOption.dataset.id);
+            if (target.closest('#applyThemeBtn')) {
+                applyTheme(previewThemeId);
+                showThemeModal = false;
                 renderThemeModal();
             }
+            
+            // Preview Theme Selection
+            const themeOption = target.closest('.theme-option');
+            if (themeOption) {
+                previewThemeId = Number(themeOption.dataset.id);
+                renderThemeModal(); // Re-render to show update in preview box
+            }
+
+            // Profile Modal Actions
+            if (target.closest('#closeProfileBtn') || target.closest('#profileOverlay') === target) {
+                showProfileModal = false;
+                renderProfileModal();
+            }
+        }
+
+        async function openProfileModal(userId) {
+            viewingProfileId = userId;
+            showProfileModal = true;
+            viewingProfileData = null; // Loading state
+            renderProfileModal();
+
+            try {
+                const docSnap = await getDoc(doc(db, "users", userId));
+                if (docSnap.exists()) {
+                    viewingProfileData = docSnap.data();
+                } else {
+                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500' }; // Fallback
+                }
+            } catch (e) {
+                console.error("Error fetching profile", e);
+                viewingProfileData = { username: 'Error', color: 'bg-red-500' };
+            }
+            renderProfileModal();
         }
 
         // --- RENDERERS ---
@@ -357,6 +426,7 @@
             if (currentUser) {
                 renderChatRoom(app);
                 renderThemeModal(); 
+                renderProfileModal();
             } else {
                 renderLogin(app);
             }
@@ -366,21 +436,21 @@
         function renderLogin(container) {
             container.innerHTML = `
                 <div class="flex h-full min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 p-4">
-                    <div class="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
-                        <div class="mb-8 flex flex-col items-center text-center">
-                            <div class="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                                <i data-lucide="message-circle" class="w-8 h-8"></i>
+                    <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+                        <div class="mb-6 flex flex-col items-center text-center">
+                            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                                <i data-lucide="message-circle" class="w-6 h-6"></i>
                             </div>
-                            <h1 class="mb-2 text-3xl font-bold text-gray-900">SimpleConnect</h1>
-                            <p class="text-gray-500">Live, Real-time, Markdown supported.</p>
+                            <h1 class="mb-1 text-2xl font-bold text-gray-900">SimpleConnect</h1>
+                            <p class="text-xs text-gray-500">Live, Real-time Chat.</p>
                         </div>
-                        <form id="loginForm" class="space-y-6">
-                            <div class="space-y-2">
-                                <label class="text-sm font-medium text-gray-700">Display Name</label>
-                                <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-3 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
-                                <p id="loginError" class="text-sm text-red-500 hidden"></p>
+                        <form id="loginForm" class="space-y-4">
+                            <div class="space-y-1">
+                                <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Display Name</label>
+                                <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
+                                <p id="loginError" class="text-xs text-red-500 hidden"></p>
                             </div>
-                            <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 transition-colors">
+                            <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm">
                                 Join Chat
                             </button>
                         </form>
@@ -388,7 +458,7 @@
                 </div>
             `;
 
-            document.getElementById('loginForm').addEventListener('submit', (e) => {
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const usernameInput = document.getElementById('username');
                 const username = usernameInput.value.trim();
@@ -400,33 +470,45 @@
                     return;
                 }
 
+                const userId = crypto.randomUUID();
+                const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
                 const user = {
-                    id: crypto.randomUUID(),
+                    id: userId,
                     username,
-                    color: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]
+                    color,
+                    joinedAt: Date.now() // Persist join date locally + db
                 };
                 
                 currentUser = user;
                 localStorage.setItem('chat_user', JSON.stringify(user));
-                init(); // Re-run init to setup listeners
+                
+                // Initial DB Save to capture joinedAt
+                try {
+                     await setDoc(doc(db, "users", userId), {
+                        username,
+                        color,
+                        lastSeen: serverTimestamp(),
+                        joinedAt: serverTimestamp()
+                    });
+                } catch(err) { console.error("Signup db error", err); }
+
+                init();
             });
         }
 
         function renderChatRoom(container) {
             container.innerHTML = `
-                <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row">
+                <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row text-sm">
                     <!-- LEFT Sidebar (Nav) -->
-                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-64 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r flex flex-col shrink-0">
-                        <div class="border-b theme-border-primary p-6">
-                            <h2 class="text-2xl font-bold theme-text-primary">SimpleConnect</h2>
-                            <p class="text-sm opacity-60">Global Room</p>
+                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-56 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r flex flex-col shrink-0">
+                        <div class="border-b theme-border-primary p-4">
+                            <h2 class="text-xl font-bold theme-text-primary">SimpleConnect</h2>
+                            <p class="text-xs opacity-60">Global Room</p>
                         </div>
-                        <div id="sidebarContent" class="flex-1 overflow-y-auto p-4 space-y-6">
-                            <!-- Injected by renderSidebar -->
-                        </div>
-                        <div class="p-4 border-t theme-border-primary">
-                            <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50/20 transition-colors">
-                                <i data-lucide="log-out" class="mr-2 w-4 h-4"></i> Sign Out
+                        <div id="sidebarContent" class="flex-1 overflow-y-auto p-3 space-y-4"></div>
+                        <div class="p-3 border-t theme-border-primary">
+                            <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50/20 transition-colors">
+                                <i data-lucide="log-out" class="mr-2 w-3 h-3"></i> Sign Out
                             </button>
                         </div>
                     </div>
@@ -437,53 +519,50 @@
                     <!-- Main Chat (Center) -->
                     <div class="flex flex-1 flex-col overflow-hidden relative h-full">
                         <!-- Mobile Header -->
-                        <div class="flex items-center justify-between border-b theme-bg-sidebar p-4 shadow-sm md:hidden shrink-0">
+                        <div class="flex items-center justify-between border-b theme-bg-sidebar p-3 shadow-sm md:hidden shrink-0">
                             <h1 class="text-lg font-bold theme-text-primary">SimpleConnect</h1>
                             <button id="menuBtn" class="p-2 opacity-70 hover:opacity-100">
-                                <i data-lucide="menu" class="w-6 h-6"></i>
+                                <i data-lucide="menu" class="w-5 h-5"></i>
                             </button>
                         </div>
 
                         <!-- Messages -->
-                        <div id="messagesList" class="flex-1 overflow-y-auto p-4 md:p-6 space-y-4"></div>
+                        <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"></div>
                         
                         <!-- Typing -->
-                        <div id="typingIndicator" class="px-6 py-2 min-h-[2rem] text-xs opacity-60 italic flex items-center shrink-0"></div>
+                        <div id="typingIndicator" class="px-4 py-1.5 min-h-[1.5rem] text-[10px] opacity-60 italic flex items-center shrink-0"></div>
 
                         <!-- Input -->
-                        <div class="theme-bg-sidebar p-4 border-t theme-border-primary shrink-0">
+                        <div class="theme-bg-sidebar p-3 border-t theme-border-primary shrink-0">
                             <form id="messageForm" class="mx-auto max-w-4xl relative">
                                 <input id="messageInput" type="text" 
                                     placeholder="Message... (**bold**, *italic*, \`code\`)" 
-                                    class="w-full rounded-full border border-gray-300 bg-gray-50/50 px-6 py-3 pr-12 theme-text-main focus:outline-none focus:ring-2 focus:ring-opacity-50 theme-border-primary" 
+                                    class="w-full rounded-full border px-4 py-2 pr-10 theme-input focus:outline-none focus:ring-1 focus:ring-opacity-50 theme-border-primary text-sm shadow-sm" 
                                     autocomplete="off" 
                                     style="--tw-ring-color: var(--primary);">
-                                <button type="submit" id="sendBtn" class="absolute right-2 top-1.5 rounded-full theme-primary p-2 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
-                                    <i data-lucide="send" class="w-4 h-4"></i>
+                                <button type="submit" id="sendBtn" class="absolute right-1.5 top-1 rounded-full theme-primary p-1.5 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
+                                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
                                 </button>
                             </form>
                         </div>
                     </div>
 
-                    <!-- RIGHT Sidebar (Online Users) - Hidden on mobile, visible on lg screens -->
-                    <div id="rightSidebar" class="hidden lg:flex w-72 flex-col border-l theme-bg-sidebar theme-border-primary shrink-0">
-                         <div class="p-6 border-b theme-border-primary">
-                            <h3 class="text-sm font-bold uppercase tracking-wider opacity-70">Online Users</h3>
+                    <!-- RIGHT Sidebar (Online Users) -->
+                    <div id="rightSidebar" class="hidden lg:flex w-60 flex-col border-l theme-bg-sidebar theme-border-primary shrink-0">
+                         <div class="p-4 border-b theme-border-primary">
+                            <h3 class="text-xs font-bold uppercase tracking-wider opacity-70">Online Users</h3>
                          </div>
-                         <div id="onlineUsersList" class="flex-1 overflow-y-auto p-2">
-                             <!-- Injected by renderRightSidebar -->
-                         </div>
+                         <div id="onlineUsersList" class="flex-1 overflow-y-auto p-2"></div>
                     </div>
                     
                     <div id="themeModalContainer"></div>
+                    <div id="profileModalContainer"></div>
                 </div>
             `;
 
-            // Render Sidebars
             renderSidebar();
             renderRightSidebar();
 
-            // Mobile Menu
             const menuBtn = document.getElementById('menuBtn');
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('overlay');
@@ -495,13 +574,11 @@
             if (menuBtn) menuBtn.addEventListener('click', toggleSidebar);
             if (overlay) overlay.addEventListener('click', toggleSidebar);
 
-            // Logout
             document.getElementById('logoutBtn').addEventListener('click', () => {
                 localStorage.removeItem('chat_user');
                 location.reload();
             });
 
-            // Message Sending
             const messageForm = document.getElementById('messageForm');
             const messageInput = document.getElementById('messageInput');
 
@@ -523,9 +600,7 @@
                 e.preventDefault();
                 const text = messageInput.value.trim();
                 if (!text) return;
-
                 messageInput.value = '';
-                
                 try {
                     await addDoc(collection(db, "messages"), {
                         text: text,
@@ -537,7 +612,6 @@
                     });
                 } catch (err) {
                     console.error("Error sending", err);
-                    alert("Failed to send message");
                 }
             });
             
@@ -545,37 +619,35 @@
         }
 
         function renderSidebar() {
-            // Renders Left Sidebar (Profile/Settings)
             const container = document.getElementById('sidebarContent');
             if (!container) return;
-            
             const safeUsername = escapeHtml(currentUser.username);
 
             container.innerHTML = `
                 <div>
-                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">My Profile</h3>
-                    <div class="flex items-center space-x-3 rounded-xl bg-gray-100/10 p-2 border border-gray-200/20">
-                        <div class="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color}">
+                    <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">My Profile</h3>
+                    <div class="user-profile-trigger flex items-center space-x-3 rounded-lg bg-gray-100/10 p-2 border border-gray-200/20 cursor-pointer hover:bg-gray-100/20 transition-colors" data-user-id="${currentUser.id}">
+                        <div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs">
                             ${safeUsername.substring(0, 2).toUpperCase()}
                         </div>
                         <div>
-                            <p class="font-semibold text-sm">${safeUsername}</p>
-                            <div class="flex items-center text-xs text-green-500">
-                                <span class="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-500"></span> Online
+                            <p class="font-semibold text-xs">${safeUsername}</p>
+                            <div class="flex items-center text-[10px] text-green-500">
+                                <span class="mr-1 h-1 w-1 rounded-full bg-green-500"></span> Online
                             </div>
                         </div>
                     </div>
                 </div>
                 
                 <div>
-                    <h3 class="mb-3 text-xs font-semibold uppercase tracking-wider opacity-50">Settings</h3>
-                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-xl p-3 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
-                        <div class="flex h-8 w-8 items-center justify-center rounded-full theme-primary">
-                            <i data-lucide="palette" class="w-4 h-4 text-white"></i>
+                    <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Settings</h3>
+                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
+                        <div class="flex h-6 w-6 items-center justify-center rounded-full theme-primary">
+                            <i data-lucide="palette" class="w-3 h-3 text-white"></i>
                         </div>
                         <div>
-                            <p class="font-medium text-sm">Themes</p>
-                            <p class="text-xs opacity-60">Customization</p>
+                            <p class="font-medium text-xs">Themes</p>
+                            <p class="text-[10px] opacity-60">Customization</p>
                         </div>
                     </button>
                 </div>
@@ -584,32 +656,31 @@
         }
 
         function renderRightSidebar() {
-            // Renders Right Sidebar (Online Users)
             const container = document.getElementById('onlineUsersList');
             if (!container) return;
             
             if (onlineUsers.length === 0) {
-                container.innerHTML = '<div class="p-4 text-center opacity-50 text-sm italic">Looking for users...</div>';
+                container.innerHTML = '<div class="p-3 text-center opacity-50 text-xs italic">Looking for users...</div>';
                 return;
             }
 
             container.innerHTML = onlineUsers.map(u => `
-                <div class="flex items-center p-3 mb-1 hover:bg-black/5 rounded-xl transition-colors cursor-default group">
+                <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
                    <div class="relative shrink-0">
-                      <div class="flex h-10 w-10 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'}">
+                      <div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'} text-xs">
                         ${escapeHtml(u.username).substring(0, 2).toUpperCase()}
                       </div>
-                      <div class="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-green-500 border-2 border-white ring-1 ring-gray-100"></div>
+                      <div class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-white ring-1 ring-gray-100"></div>
                    </div>
-                   <div class="ml-3 min-w-0 flex-1">
+                   <div class="ml-2.5 min-w-0 flex-1">
                       <div class="flex items-center justify-between">
-                          <p class="text-sm font-semibold truncate ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
+                          <p class="text-xs font-semibold truncate ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
                               ${escapeHtml(u.username)} ${u.id === currentUser.id ? '(You)' : ''}
                           </p>
                       </div>
                       <div class="flex items-center mt-0.5">
-                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200 uppercase tracking-wide">
-                            <i data-lucide="crown" class="w-3 h-3 mr-1 fill-yellow-500 text-yellow-600"></i> VIP
+                        <span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200 uppercase tracking-wide">
+                            <i data-lucide="crown" class="w-2.5 h-2.5 mr-0.5 fill-yellow-500 text-yellow-600"></i> VIP
                         </span>
                       </div>
                    </div>
@@ -628,32 +699,149 @@
                 return;
             }
 
+            // Get preview theme object
+            const t = themes.find(x => x.id === previewThemeId) || themes[0];
+            
+            // Generate styles for preview box
+            const previewStyle = `
+                --primary: ${t.primary};
+                --bg-app: ${t.bgApp};
+                --bg-sidebar: ${t.bgSidebar};
+                --text-main: ${t.text};
+                --msg-bubble-me: ${t.primary};
+                --msg-text-me: #ffffff;
+                --border-color: ${t.borderColor};
+            `;
+
             container.innerHTML = `
-                <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm">
-                    <div class="w-full max-w-4xl h-[80vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
-                        <div class="p-6 border-b flex justify-between items-center bg-gray-50">
+                <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm">
+                    <div class="w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+                        
+                        <!-- Header -->
+                        <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
                             <div>
-                                <h2 class="text-xl font-bold text-gray-900">Select Theme</h2>
-                                <p class="text-gray-500 text-sm">100 styles available</p>
+                                <h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2>
+                                <p class="text-xs text-gray-500">Preview before you apply</p>
                             </div>
-                            <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors">
-                                <i data-lucide="x" class="w-6 h-6 text-gray-600"></i>
-                            </button>
+                            <div class="flex items-center space-x-2">
+                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">
+                                    Apply Theme
+                                </button>
+                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors">
+                                    <i data-lucide="x" class="w-5 h-5 text-gray-600"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="flex-1 overflow-y-auto p-6 bg-white">
-                            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                ${themes.map(t => `
-                                    <button class="theme-option group relative flex flex-col items-center rounded-xl border-2 p-2 transition-all hover:scale-105 ${currentThemeId === t.id ? 'border-blue-600 ring-2 ring-blue-100' : 'border-gray-100 hover:border-gray-300'} shadow-sm bg-white" 
-                                            data-id="${t.id}">
-                                        <div class="w-full h-12 rounded mb-2 shadow-inner relative overflow-hidden" style="background-color: ${t.bgApp}">
-                                            <div class="absolute inset-x-0 top-0 h-3 w-full opacity-80" style="background-color: ${t.primary}"></div>
+
+                        <div class="flex flex-1 overflow-hidden">
+                            <!-- Live Preview Panel (Left) -->
+                            <div class="w-1/3 border-r bg-gray-100 hidden md:flex flex-col p-4 overflow-hidden relative">
+                                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Live Preview</h3>
+                                
+                                <!-- Mock Window -->
+                                <div class="flex-1 rounded-xl shadow-lg flex flex-col overflow-hidden border theme-scope relative" style="${previewStyle}">
+                                    <!-- Mock Header -->
+                                    <div class="h-10 border-b theme-bg-sidebar flex items-center px-3 space-x-2 shrink-0">
+                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+                                        <div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div>
+                                        <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+                                    </div>
+                                    <!-- Mock Body -->
+                                    <div class="flex-1 p-3 space-y-3 overflow-hidden theme-bg-app relative">
+                                        <div class="flex items-end">
+                                            <div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div>
+                                            <div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]">
+                                                <p class="theme-text-main opacity-90">How does this look?</p>
+                                            </div>
                                         </div>
-                                        <span class="text-[10px] font-bold text-gray-600 group-hover:text-gray-900">${t.name}</span>
-                                    </button>
-                                `).join('')}
+                                        <div class="flex flex-row-reverse items-end">
+                                             <div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white">
+                                                <p>Looks awesome! 😎</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Mock Input -->
+                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0">
+                                        <div class="h-full rounded-full border opacity-50 mx-auto w-full"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mt-4 text-center">
+                                    <span class="text-sm font-bold text-gray-700">${t.name}</span>
+                                </div>
+                            </div>
+
+                            <!-- Theme Grid (Right) -->
+                            <div class="flex-1 overflow-y-auto p-4 bg-white">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    ${themes.map(th => `
+                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" 
+                                                data-id="${th.id}">
+                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}">
+                                                <div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div>
+                                                <div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div>
+                                                <div class="absolute left-1/3 top-2 w-12 h-3 rounded bg-black/5"></div>
+                                            </div>
+                                            <span class="text-[10px] font-semibold text-gray-600 group-hover:text-gray-900 text-center">${th.name}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+            `;
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function renderProfileModal() {
+            const container = document.getElementById('profileModalContainer');
+            if (!container) return;
+
+            if (!showProfileModal) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200' };
+            const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
+            const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
+
+            container.innerHTML = `
+                <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden transform transition-all scale-100">
+                        <div class="h-24 bg-gradient-to-r from-blue-500 to-purple-600 relative">
+                             <button id="closeProfileBtn" class="absolute top-2 right-2 p-1 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="px-6 pb-6 relative">
+                            <div class="absolute -top-10 left-6">
+                                <div class="h-20 w-20 rounded-full border-4 border-white shadow-md flex items-center justify-center text-2xl font-bold text-white ${data.color}">
+                                    ${escapeHtml(data.username).substring(0,2).toUpperCase()}
+                                </div>
+                            </div>
+                            
+                            <div class="mt-12">
+                                <h2 class="text-xl font-bold text-gray-900 flex items-center">
+                                    ${escapeHtml(data.username)}
+                                    <i data-lucide="crown" class="w-4 h-4 ml-2 text-yellow-500 fill-yellow-500"></i>
+                                </h2>
+                                <p class="text-xs text-yellow-600 font-bold uppercase tracking-wide mt-1">VIP Member</p>
+                                
+                                <div class="mt-6 space-y-3">
+                                    <div class="flex items-center text-sm text-gray-600">
+                                        <i data-lucide="calendar" class="w-4 h-4 mr-3 opacity-50"></i>
+                                        <span>Joined ${joinDate}</span>
+                                    </div>
+                                    <div class="flex items-center text-sm text-gray-600">
+                                        <i data-lucide="clock" class="w-4 h-4 mr-3 opacity-50"></i>
+                                        <span>Last seen: ${lastSeen}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                     </div>
                 </div>
             `;
             if(window.lucide) window.lucide.createIcons();
@@ -666,11 +854,11 @@
             if (messages.length === 0) {
                 list.innerHTML = `
                     <div class="flex h-full flex-col items-center justify-center text-center opacity-40">
-                        <div class="mb-4 rounded-full bg-gray-200 p-6">
-                            <i data-lucide="message-square-dashed" class="w-12 h-12"></i>
+                        <div class="mb-4 rounded-full bg-gray-200 p-4">
+                            <i data-lucide="message-square-dashed" class="w-8 h-8"></i>
                         </div>
-                        <h3 class="text-lg font-medium">No messages yet</h3>
-                        <p class="max-w-xs text-sm">Start the conversation!</p>
+                        <h3 class="text-base font-medium">No messages</h3>
+                        <p class="text-xs">Say hello!</p>
                     </div>
                 `;
             } else {
@@ -681,67 +869,53 @@
                     const isEditing = editingMessageId === msg.id;
                     const safeName = escapeHtml(msg.senderName);
                     
-                    // Markdown Parsing
                     let cleanHtml = '';
                     if (window.marked && window.DOMPurify) {
-                         try {
-                             cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text));
-                         } catch (e) {
-                             cleanHtml = escapeHtml(msg.text);
-                         }
-                    } else {
-                         cleanHtml = escapeHtml(msg.text);
-                    }
+                         try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text)); } 
+                         catch (e) { cleanHtml = escapeHtml(msg.text); }
+                    } else { cleanHtml = escapeHtml(msg.text); }
 
                     if (isEditing) {
                         return `
-                        <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-4">
+                        <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3">
                             <div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start">
-                                <div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-3 shadow-lg z-10">
+                                <div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10">
                                     <textarea 
-                                        class="edit-input w-full p-2 mb-2 text-sm border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" 
-                                        rows="2"
-                                        data-id="${msg.id}"
-                                        autofocus
-                                    >${escapeHtml(msg.text)}</textarea>
-                                    <div class="flex justify-end space-x-2">
-                                        <button class="btn-cancel-edit text-xs px-3 py-1.5 text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
-                                        <button class="btn-save-edit text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button>
+                                        class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" 
+                                        rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea>
+                                    <div class="flex justify-end space-x-1">
+                                        <button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
+                                        <button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                        `;
+                        </div>`;
                     }
 
                     return `
                         <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} group message-group">
-                            <div class="flex max-w-[85%] md:max-w-[70%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
-                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1">
+                            <div class="flex max-w-[90%] md:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
+                                <div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">
                                     ${safeName.substring(0, 2).toUpperCase()}
                                 </div>
                                 
                                 ${isMe ? `
-                                    <div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-20 pr-2' : '-right-20 pl-2'}">
-                                        <button class="btn-start-edit p-1.5 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all transform hover:scale-110" data-id="${msg.id}" title="Edit">
-                                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                                    <div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}">
+                                        <button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}">
+                                            <i data-lucide="pencil" class="w-3 h-3"></i>
                                         </button>
-                                        <button class="btn-delete p-1.5 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all transform hover:scale-110" data-id="${msg.id}" title="Delete">
-                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        <button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}">
+                                            <i data-lucide="trash-2" class="w-3 h-3"></i>
                                         </button>
                                     </div>
                                 ` : ''}
 
-                                <div class="relative rounded-2xl px-4 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[60px]">
-                                    ${!isMe ? `<p class="mb-1 text-[10px] font-bold opacity-60 uppercase tracking-wide">${safeName}</p>` : ''}
-                                    
-                                    <div class="markdown-content text-sm md:text-base leading-relaxed break-words">
-                                        ${cleanHtml}
-                                    </div>
-                                    
-                                    <div class="flex items-center justify-end mt-1 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-1">
-                                        ${msg.edited ? '<span class="text-[9px] italic" title="Edited">(edited)</span>' : ''}
-                                        <span class="text-[10px]">${time}</span>
+                                <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px]">
+                                    ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
+                                    <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
+                                    <div class="flex items-center justify-end mt-0.5 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-0.5">
+                                        ${msg.edited ? '<span class="text-[8px] italic">(edited)</span>' : ''}
+                                        <span class="text-[9px]">${time}</span>
                                     </div>
                                 </div>
                             </div>
@@ -751,11 +925,9 @@
             }
             if(window.lucide) window.lucide.createIcons();
             
-            // Auto scroll if not editing
-            if (!editingMessageId && list.scrollTop + list.clientHeight >= list.scrollHeight - 200) {
+            if (!editingMessageId && list.scrollTop + list.clientHeight >= list.scrollHeight - 150) {
                  setTimeout(() => list.scrollTop = list.scrollHeight, 50);
             } else if (messages.length > 0 && list.scrollTop === 0) {
-                 // Initial load scroll
                  setTimeout(() => list.scrollTop = list.scrollHeight, 100);
             }
         }
@@ -763,27 +935,14 @@
         function updateTypingUI() {
             const indicator = document.getElementById('typingIndicator');
             if (!indicator) return;
-            
             const now = Date.now();
-            // Cleanup in memory
             const active = Object.values(typingUsers).filter(u => now - u.timestamp < 3000).map(u => escapeHtml(u.username));
-            
             if (active.length > 0) {
-                const text = active.length === 1 ? `${active[0]} is typing` : 
-                             active.length === 2 ? `${active[0]} and ${active[1]} are typing` : 
-                             `${active.length} people are typing`;
-                indicator.innerHTML = `
-                    <span class="mr-1">${text}</span>
-                    <span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span>
-                    <span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span>
-                    <span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span>
-                `;
-            } else {
-                indicator.innerHTML = '';
-            }
+                const text = active.length === 1 ? `${active[0]} is typing` : active.length === 2 ? `${active[0]} & ${active[1]} are typing` : `${active.length} people typing`;
+                indicator.innerHTML = `<span class="mr-1">${text}</span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span>`;
+            } else { indicator.innerHTML = ''; }
         }
 
-        // Start
         window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
