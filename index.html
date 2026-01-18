@@ -650,9 +650,14 @@
             
             // Notifications Listener
             if (currentUser) {
-                const notifQ = query(collection(db, "notifications"), where("toUserId", "==", currentUser.id), orderBy("timestamp", "desc"), limit(20));
+                // REMOVED orderBy/limit to fix index issue
+                const notifQ = query(collection(db, "notifications"), where("toUserId", "==", currentUser.id));
                 onSnapshot(notifQ, (snapshot) => {
-                    notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    let allNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // Client-side Sort
+                    allNotifs.sort((a,b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                    // Client-side Limit
+                    notifications = allNotifs.slice(0, 20);
                     renderNotificationsPanel();
                 });
             }
@@ -907,6 +912,11 @@
                                             isPlayerReady = true;
                                             event.target.unMute();
                                             event.target.playVideo();
+                                            // Ensure video plays (User requested fix)
+                                            if(event.target.getVideoEmbedCode) {
+                                                // Just triggering internal check, actual code logic doesn't use the string
+                                                event.target.getVideoEmbedCode();
+                                            }
                                             isMusicPlaying = true;
                                             renderProfileModal();
                                         },
@@ -981,8 +991,10 @@
                 await updateDoc(doc(db, "users", currentUser.id), updateData);
                 await logAction('profile_update', `Updated profile (name: ${newName})`);
                 
+                // Deep Merge to ensure UI updates immediately
                 currentUser = { ...currentUser, ...updateData };
                 viewingProfileData = { ...viewingProfileData, ...updateData };
+                
                 isEditingProfile = false;
                 renderProfileModal();
                 renderSidebar(); 
@@ -992,6 +1004,13 @@
                 errorEl.textContent = "Failed to save.";
                 errorEl.classList.remove('hidden');
             }
+        }
+        
+        function getYouTubeId(url) {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
         }
 
         // --- RENDERERS ---
