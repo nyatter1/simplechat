@@ -724,6 +724,294 @@
             }
         }
 
+        // --- RENDERERS ---
+
+        function render() {
+            const app = document.getElementById('app');
+            app.innerHTML = '';
+            
+            if (currentUser) {
+                renderChatRoom(app);
+                renderThemeModal(); 
+                renderProfileModal();
+            } else {
+                renderLogin(app);
+            }
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function renderLogin(container) {
+            container.innerHTML = `
+                <div class="flex h-full min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 p-4">
+                    <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+                        <div class="mb-6 flex flex-col items-center text-center">
+                            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                                <i data-lucide="message-circle" class="w-6 h-6"></i>
+                            </div>
+                            <h1 class="mb-1 text-2xl font-bold text-gray-900">SimpleConnect</h1>
+                            <p class="text-xs text-gray-500">Live, Real-time Chat.</p>
+                        </div>
+                        <form id="loginForm" class="space-y-4">
+                            <div class="space-y-1">
+                                <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Display Name</label>
+                                <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
+                                <p id="loginError" class="text-xs text-red-500 hidden"></p>
+                            </div>
+                            <button id="loginBtn" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">
+                                Join Chat
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const usernameInput = document.getElementById('username');
+                const btn = document.getElementById('loginBtn');
+                const err = document.getElementById('loginError');
+                
+                const username = usernameInput.value.trim();
+                if (!username || username.length < 2) {
+                    err.textContent = 'Name too short';
+                    err.classList.remove('hidden');
+                    return;
+                }
+                
+                btn.disabled = true;
+                err.classList.add('hidden');
+
+                try {
+                    const usernameLower = username.toLowerCase();
+                    const q = query(collection(db, "users"), where("usernameLower", "==", usernameLower));
+                    const snapshot = await getDocs(q);
+                    
+                    if (!snapshot.empty) {
+                        err.textContent = 'Username taken.';
+                        err.classList.remove('hidden');
+                        btn.disabled = false;
+                        return;
+                    }
+
+                    const userId = crypto.randomUUID();
+                    const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+                    const role = 'vip'; 
+                    const roleConfig = getRoleConfig(role);
+
+                    const user = {
+                        id: userId,
+                        username,
+                        usernameLower,
+                        color,
+                        role,
+                        banner: roleConfig.gradient,
+                        joinedAt: Date.now()
+                    };
+                    
+                    currentUser = user;
+                    localStorage.setItem('chat_user', JSON.stringify(user));
+                    
+                    await setDoc(doc(db, "users", userId), {
+                        username,
+                        usernameLower,
+                        color,
+                        role,
+                        banner: roleConfig.gradient,
+                        lastSeen: serverTimestamp(),
+                        joinedAt: serverTimestamp()
+                    });
+
+                    init();
+                } catch (error) {
+                    console.error("Login error:", error);
+                    err.textContent = 'Error connecting to server.';
+                    err.classList.remove('hidden');
+                    btn.disabled = false;
+                }
+            });
+        }
+
+        function renderChatRoom(container) {
+            container.innerHTML = `
+                <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row text-sm">
+                    <!-- LEFT Sidebar -->
+                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-56 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r flex flex-col shrink-0">
+                        <div class="border-b theme-border-primary p-4">
+                            <h2 class="text-xl font-bold theme-text-primary">SimpleConnect</h2>
+                            <p class="text-xs opacity-60">Global Room</p>
+                        </div>
+                        <div id="sidebarContent" class="flex-1 overflow-y-auto p-3 space-y-4"></div>
+                        <div class="p-3 border-t theme-border-primary">
+                            <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50/20 transition-colors">
+                                <i data-lucide="log-out" class="mr-2 w-3 h-3"></i> Sign Out
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="overlay" class="fixed inset-0 z-20 bg-black bg-opacity-50 md:hidden hidden"></div>
+
+                    <!-- Main Chat -->
+                    <div class="flex flex-1 flex-col overflow-hidden relative h-full">
+                        <div class="flex items-center justify-between border-b theme-bg-sidebar p-3 shadow-sm md:hidden shrink-0">
+                            <h1 class="text-lg font-bold theme-text-primary">SimpleConnect</h1>
+                            <button id="menuBtn" class="p-2 opacity-70 hover:opacity-100">
+                                <i data-lucide="menu" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+
+                        <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"></div>
+                        <div id="typingIndicator" class="px-4 py-1.5 min-h-[1.5rem] text-[10px] opacity-60 italic flex items-center shrink-0"></div>
+
+                        <!-- Input Area with Mention Dropdown -->
+                        <div class="theme-bg-sidebar p-3 border-t theme-border-primary shrink-0 relative">
+                            <div id="mentionDropdown" class="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-xl w-48 hidden overflow-hidden z-50"></div>
+
+                            <form id="messageForm" class="mx-auto max-w-4xl relative">
+                                <input id="messageInput" type="text" 
+                                    placeholder="Message... (@ to mention)" 
+                                    class="w-full rounded-full border px-4 py-2 pr-20 theme-input focus:outline-none focus:ring-1 focus:ring-opacity-50 theme-border-primary text-sm shadow-sm" 
+                                    autocomplete="off" 
+                                    style="--tw-ring-color: var(--primary);">
+                                
+                                <div class="absolute right-1.5 top-1 flex space-x-1">
+                                    <button type="button" id="uploadImgBtn" class="p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors" title="Upload Image">
+                                        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button type="submit" id="sendBtn" class="rounded-full theme-primary p-1.5 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
+                                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT Sidebar -->
+                    <div id="rightSidebar" class="hidden lg:flex w-60 flex-col border-l theme-bg-sidebar theme-border-primary shrink-0">
+                         <div class="p-4 border-b theme-border-primary">
+                            <h3 class="text-xs font-bold uppercase tracking-wider opacity-70">Online Users</h3>
+                         </div>
+                         <div id="onlineUsersList" class="flex-1 overflow-y-auto p-2"></div>
+                    </div>
+                    
+                    <div id="themeModalContainer"></div>
+                    <div id="profileModalContainer"></div>
+                </div>
+            `;
+
+            renderSidebar();
+            renderRightSidebar();
+
+            const menuBtn = document.getElementById('menuBtn');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            const toggleSidebar = () => {
+                sidebar.classList.toggle('-translate-x-full');
+                sidebar.classList.toggle('translate-x-0');
+                overlay.classList.toggle('hidden');
+            };
+            if (menuBtn) menuBtn.addEventListener('click', toggleSidebar);
+            if (overlay) overlay.addEventListener('click', toggleSidebar);
+
+            document.getElementById('logoutBtn').addEventListener('click', () => {
+                localStorage.removeItem('chat_user');
+                location.reload();
+            });
+
+            const messageForm = document.getElementById('messageForm');
+            const messageInput = document.getElementById('messageInput');
+
+            messageInput.addEventListener('input', (e) => {
+                const val = e.target.value;
+                
+                // Typing Indicator logic
+                if (val.trim()) {
+                    const now = Date.now();
+                    if (now - lastTypingSent > 2500) {
+                        setDoc(doc(db, "typing", currentUser.id), {
+                            userId: currentUser.id,
+                            username: currentUser.username,
+                            timestamp: serverTimestamp()
+                        });
+                        lastTypingSent = now;
+                    }
+                }
+                
+                // Mention Logic
+                const lastAt = val.lastIndexOf('@');
+                if (lastAt !== -1) {
+                    const query = val.substring(lastAt + 1);
+                    // Check if there's a space after @, if so, stop suggesting
+                    if (!query.includes(' ')) {
+                        mentionQuery = query.toLowerCase();
+                        mentionIndex = lastAt + 1;
+                        renderMentionDropdown();
+                    } else {
+                        mentionQuery = null;
+                        renderMentionDropdown();
+                    }
+                } else {
+                    mentionQuery = null;
+                    renderMentionDropdown();
+                }
+            });
+
+            messageForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const text = messageInput.value.trim();
+                if (!text && !pendingChatImage) return;
+                
+                messageInput.value = '';
+                mentionQuery = null;
+                renderMentionDropdown();
+                
+                const imgToSend = pendingChatImage;
+                pendingChatImage = null;
+                document.getElementById('uploadImgBtn').classList.remove('text-green-600', 'bg-green-100');
+
+                try {
+                    await addDoc(collection(db, "messages"), {
+                        text: text,
+                        image: imgToSend,
+                        senderId: currentUser.id,
+                        senderName: currentUser.username,
+                        senderColor: currentUser.color,
+                        timestamp: serverTimestamp(),
+                        edited: false
+                    });
+                } catch (err) {
+                    console.error("Error sending", err);
+                }
+            });
+            
+            renderChatMessages();
+        }
+
+        function renderMentionDropdown() {
+            const dropdown = document.getElementById('mentionDropdown');
+            if (!dropdown) return;
+
+            if (!mentionQuery && mentionQuery !== '') {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            const matches = onlineUsers.filter(u => u.username.toLowerCase().startsWith(mentionQuery));
+            if (matches.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            dropdown.innerHTML = matches.map(u => `
+                <div class="mention-item flex items-center p-2 hover:bg-gray-100 cursor-pointer" data-username="${u.username}">
+                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold mr-2 ${u.color}">
+                        ${u.username.substring(0,2).toUpperCase()}
+                     </div>
+                     <span class="text-sm font-medium text-gray-800">${u.username}</span>
+                </div>
+            `).join('');
+            dropdown.classList.remove('hidden');
+        }
+
         function renderSidebar() {
             const container = document.getElementById('sidebarContent');
             if (!container) return;
@@ -733,9 +1021,6 @@
                 ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">` 
                 : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
             
-            // Check if active user has status in online list (or from currentUser object if up to date)
-            // But currentUser object might be stale if we relied on snapshots for it. 
-            // Better to rely on currentUser local var which we update on save.
             const statusHtml = currentUser.status 
                 ? `<p class="text-[10px] text-gray-500 truncate max-w-[140px]">"${escapeHtml(currentUser.status)}"</p>` 
                 : `<div class="flex items-center text-[10px] text-green-500"><span class="mr-1 h-1 w-1 rounded-full bg-green-500"></span> Online</div>`;
@@ -804,6 +1089,65 @@
                 </div>
             `}).join('');
             
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function renderThemeModal() {
+            const container = document.getElementById('themeModalContainer');
+            if (!container) return;
+
+            if (!showThemeModal) { container.innerHTML = ''; return; }
+
+            const t = themes.find(x => x.id === previewThemeId) || themes[0];
+            const previewStyle = `
+                --primary: ${t.primary};
+                --bg-app: ${t.bgApp};
+                --bg-sidebar: ${t.bgSidebar};
+                --text-main: ${t.text};
+                --msg-bubble-me: ${t.primary};
+                --msg-text-me: #ffffff;
+                --border-color: ${t.borderColor};
+            `;
+
+            container.innerHTML = `
+                <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm">
+                    <div class="w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+                        <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
+                            <div><h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2><p class="text-xs text-gray-500">Preview before you apply</p></div>
+                            <div class="flex items-center space-x-2">
+                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Apply Theme</button>
+                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-gray-600"></i></button>
+                            </div>
+                        </div>
+                        <div class="flex flex-1 overflow-hidden">
+                            <div class="w-1/3 border-r bg-gray-100 hidden md:flex flex-col p-4 overflow-hidden relative">
+                                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Live Preview</h3>
+                                <div class="flex-1 rounded-xl shadow-lg flex flex-col overflow-hidden border theme-scope relative" style="${previewStyle}">
+                                    <div class="h-10 border-b theme-bg-sidebar flex items-center px-3 space-x-2 shrink-0">
+                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div><div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+                                    </div>
+                                    <div class="flex-1 p-3 space-y-3 overflow-hidden theme-bg-app relative">
+                                        <div class="flex items-end"><div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div><div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]"><p class="theme-text-main opacity-90">How does this look?</p></div></div>
+                                        <div class="flex flex-row-reverse items-end"><div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white"><p>Looks awesome! 😎</p></div></div>
+                                    </div>
+                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0"><div class="h-full rounded-full border opacity-50 mx-auto w-full"></div></div>
+                                </div>
+                                <div class="mt-4 text-center"><span class="text-sm font-bold text-gray-700">${t.name}</span></div>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-4 bg-white">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    ${themes.map(th => `
+                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" data-id="${th.id}">
+                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}"><div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div><div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div></div>
+                                            <span class="text-[10px] font-semibold text-gray-600 group-hover:text-gray-900 text-center">${th.name}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
             if(window.lucide) window.lucide.createIcons();
         }
 
@@ -1092,12 +1436,15 @@
                     // Auto-scroll on new message
                     setTimeout(() => list.scrollTop = list.scrollHeight, 50);
                 } else {
-                    // Update if changed
-                    if (el.dataset.ts != msg.timestamp || el.dataset.edited != msg.edited) {
-                        el.innerHTML = contentHtml;
-                        el.dataset.ts = msg.timestamp;
-                        el.dataset.edited = msg.edited;
-                    }
+                    // Update if changed (timestamp, edited, or reactions)
+                    // Simplified check: we just re-render content if timestamps differ or edited flag differs.
+                    // For reactions, we should ideally check deep equality or just update always if simple.
+                    // To keep it simple: re-render if anything potentially changed.
+                    // Since reactions are in msg object, we can just re-render.
+                    // Optimization: check reaction counts or simply overwrite innerHTML
+                    el.innerHTML = contentHtml;
+                    el.dataset.ts = msg.timestamp;
+                    el.dataset.edited = msg.edited;
                 }
             });
             
