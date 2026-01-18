@@ -93,7 +93,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -236,7 +236,32 @@
         function formatDate(timestamp) {
             if (!timestamp) return 'Unknown';
             const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
-            return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        // Returns role config based on username
+        function getUserRole(username) {
+            if (!username) return { label: 'VIP', icon: 'crown', color: 'text-yellow-600', fill: 'fill-yellow-500', bg: 'bg-yellow-100', border: 'border-yellow-200' };
+            
+            if (username.toLowerCase() === 'developer') {
+                return { 
+                    label: 'Developer', 
+                    icon: 'code-2', 
+                    color: 'text-blue-600', 
+                    fill: 'fill-blue-500', 
+                    bg: 'bg-blue-100', 
+                    border: 'border-blue-200' 
+                };
+            }
+            
+            return { 
+                label: 'VIP', 
+                icon: 'crown', 
+                color: 'text-yellow-600', 
+                fill: 'fill-yellow-500', 
+                bg: 'bg-yellow-100', 
+                border: 'border-yellow-200' 
+            };
         }
 
         // --- APP INITIALIZATION ---
@@ -273,10 +298,9 @@
             try {
                 await setDoc(doc(db, "users", currentUser.id), {
                     username: currentUser.username,
+                    usernameLower: currentUser.username.toLowerCase(),
                     color: currentUser.color,
                     lastSeen: serverTimestamp(),
-                    // Ensure joinedAt is kept if it exists, otherwise it might be lost in a set without merge:true full check, but merge:true handles it.
-                    // If we want to backfill joinedAt for old users we'd do it here, but let's assume login handles it.
                 }, { merge: true });
             } catch (e) {
                 console.error("Presence update failed", e);
@@ -450,7 +474,7 @@
                                 <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
                                 <p id="loginError" class="text-xs text-red-500 hidden"></p>
                             </div>
-                            <button type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm">
+                            <button id="loginBtn" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">
                                 Join Chat
                             </button>
                         </form>
@@ -461,38 +485,63 @@
             document.getElementById('loginForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const usernameInput = document.getElementById('username');
+                const btn = document.getElementById('loginBtn');
+                const err = document.getElementById('loginError');
+                
                 const username = usernameInput.value.trim();
 
                 if (!username || username.length < 2) {
-                    const err = document.getElementById('loginError');
                     err.textContent = 'Name too short';
                     err.classList.remove('hidden');
                     return;
                 }
+                
+                // Disable button
+                btn.disabled = true;
+                err.classList.add('hidden');
 
-                const userId = crypto.randomUUID();
-                const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-                const user = {
-                    id: userId,
-                    username,
-                    color,
-                    joinedAt: Date.now() // Persist join date locally + db
-                };
-                
-                currentUser = user;
-                localStorage.setItem('chat_user', JSON.stringify(user));
-                
-                // Initial DB Save to capture joinedAt
+                // Check for unique username
                 try {
-                     await setDoc(doc(db, "users", userId), {
+                    const usernameLower = username.toLowerCase();
+                    const q = query(collection(db, "users"), where("usernameLower", "==", usernameLower));
+                    const snapshot = await getDocs(q);
+                    
+                    if (!snapshot.empty) {
+                        err.textContent = 'Username already taken. Please choose another.';
+                        err.classList.remove('hidden');
+                        btn.disabled = false;
+                        return;
+                    }
+
+                    const userId = crypto.randomUUID();
+                    const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+                    const user = {
+                        id: userId,
                         username,
+                        usernameLower, // Save lower case for future checks
+                        color,
+                        joinedAt: Date.now()
+                    };
+                    
+                    currentUser = user;
+                    localStorage.setItem('chat_user', JSON.stringify(user));
+                    
+                    // Initial DB Save
+                    await setDoc(doc(db, "users", userId), {
+                        username,
+                        usernameLower,
                         color,
                         lastSeen: serverTimestamp(),
                         joinedAt: serverTimestamp()
                     });
-                } catch(err) { console.error("Signup db error", err); }
 
-                init();
+                    init();
+                } catch (error) {
+                    console.error("Login error:", error);
+                    err.textContent = 'Error connecting to server. Try again.';
+                    err.classList.remove('hidden');
+                    btn.disabled = false;
+                }
             });
         }
 
@@ -664,7 +713,9 @@
                 return;
             }
 
-            container.innerHTML = onlineUsers.map(u => `
+            container.innerHTML = onlineUsers.map(u => {
+                const role = getUserRole(u.username);
+                return `
                 <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
                    <div class="relative shrink-0">
                       <div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'} text-xs">
@@ -679,13 +730,13 @@
                           </p>
                       </div>
                       <div class="flex items-center mt-0.5">
-                        <span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold bg-yellow-100 text-yellow-700 border border-yellow-200 uppercase tracking-wide">
-                            <i data-lucide="crown" class="w-2.5 h-2.5 mr-0.5 fill-yellow-500 text-yellow-600"></i> VIP
+                        <span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold ${role.bg} ${role.color} ${role.border} border uppercase tracking-wide">
+                            <i data-lucide="${role.icon}" class="w-2.5 h-2.5 mr-0.5 ${role.fill} ${role.color}"></i> ${role.label}
                         </span>
                       </div>
                    </div>
                 </div>
-            `).join('');
+            `}).join('');
             
             if(window.lucide) window.lucide.createIcons();
         }
@@ -806,37 +857,42 @@
             const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200' };
             const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
             const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
+            
+            const role = getUserRole(data.username);
 
             container.innerHTML = `
                 <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-xs overflow-hidden transform transition-all scale-100">
-                        <div class="h-24 bg-gradient-to-r from-blue-500 to-purple-600 relative">
-                             <button id="closeProfileBtn" class="absolute top-2 right-2 p-1 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
-                                <i data-lucide="x" class="w-4 h-4"></i>
+                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                        <!-- Banner -->
+                        <div class="h-32 bg-gradient-to-r ${role.label === 'Developer' ? 'from-blue-600 to-indigo-800' : 'from-yellow-400 to-orange-500'} relative">
+                             <button id="closeProfileBtn" class="absolute top-3 right-3 p-1.5 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
+                                <i data-lucide="x" class="w-5 h-5"></i>
                             </button>
                         </div>
-                        <div class="px-6 pb-6 relative">
-                            <div class="absolute -top-10 left-6">
-                                <div class="h-20 w-20 rounded-full border-4 border-white shadow-md flex items-center justify-center text-2xl font-bold text-white ${data.color}">
+                        
+                        <div class="px-8 pb-8 relative">
+                            <!-- Avatar -->
+                            <div class="absolute -top-12 left-1/2 transform -translate-x-1/2">
+                                <div class="h-24 w-24 rounded-full border-[6px] border-white shadow-lg flex items-center justify-center text-3xl font-bold text-white ${data.color}">
                                     ${escapeHtml(data.username).substring(0,2).toUpperCase()}
                                 </div>
                             </div>
                             
-                            <div class="mt-12">
-                                <h2 class="text-xl font-bold text-gray-900 flex items-center">
-                                    ${escapeHtml(data.username)}
-                                    <i data-lucide="crown" class="w-4 h-4 ml-2 text-yellow-500 fill-yellow-500"></i>
-                                </h2>
-                                <p class="text-xs text-yellow-600 font-bold uppercase tracking-wide mt-1">VIP Member</p>
+                            <div class="mt-14 text-center">
+                                <h2 class="text-2xl font-bold text-gray-900 mb-2">${escapeHtml(data.username)}</h2>
                                 
-                                <div class="mt-6 space-y-3">
-                                    <div class="flex items-center text-sm text-gray-600">
-                                        <i data-lucide="calendar" class="w-4 h-4 mr-3 opacity-50"></i>
-                                        <span>Joined ${joinDate}</span>
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${role.bg} ${role.color} border ${role.border} uppercase tracking-wide">
+                                    <i data-lucide="${role.icon}" class="w-3.5 h-3.5 mr-1 ${role.fill}"></i> ${role.label}
+                                </span>
+                                
+                                <div class="mt-8 grid grid-cols-2 gap-4 border-t pt-6">
+                                    <div class="flex flex-col items-center">
+                                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Joined</span>
+                                        <span class="text-sm font-medium text-gray-700 mt-1">${joinDate}</span>
                                     </div>
-                                    <div class="flex items-center text-sm text-gray-600">
-                                        <i data-lucide="clock" class="w-4 h-4 mr-3 opacity-50"></i>
-                                        <span>Last seen: ${lastSeen}</span>
+                                    <div class="flex flex-col items-center">
+                                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Last Seen</span>
+                                        <span class="text-sm font-medium text-gray-700 mt-1 text-center leading-tight">${lastSeen}</span>
                                     </div>
                                 </div>
                             </div>
