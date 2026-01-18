@@ -125,6 +125,13 @@
         /* Wallet Animation */
         .wallet-enter { animation: wallet-slide 0.2s ease-out forwards; transform-origin: top; }
         @keyframes wallet-slide { from { opacity: 0; transform: scaleY(0.8); } to { opacity: 1; transform: scaleY(1); } }
+        
+        /* Custom Scrollbar for color pickers */
+        .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)); gap: 8px; }
+        .color-option { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s; }
+        .color-option:hover { transform: scale(1.1); }
+        .color-option.selected { border-color: #2563eb; transform: scale(1.1); box-shadow: 0 0 0 2px white, 0 0 0 4px #2563eb; }
+
     </style>
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -177,12 +184,18 @@
         let showNewsModal = false;
         let isCreatingNews = false;
         let pendingNewsImage = null;
+        let showCustomiseModal = false;
+        let customiseTab = 'app'; // 'app' or 'profile'
         
+        // Customisation Staging
+        let pendingAppTheme = null;
+        let pendingProfileCustom = {};
+
         // Mentions State
         let mentionQuery = null;
         let mentionIndex = -1;
         
-        // Tracking to prevent spam notifications locally
+        // Tracking
         let sessionViewedProfiles = new Set();
         
         // Music State (YouTube)
@@ -232,7 +245,7 @@
             try {
                 if(!currentUser) return;
                 await addDoc(collection(db, "logs"), {
-                    type: type, // 'message_delete', 'message_edit', 'rank_change', 'reaction', 'profile_update', 'bot_init'
+                    type: type, // 'message_delete', 'message_edit', 'rank_change', 'reaction', 'profile_update', 'bot_init', 'theme_custom'
                     userId: currentUser.id,
                     username: currentUser.username,
                     details: details,
@@ -262,7 +275,7 @@
                 id, name, primary: prim, primaryHover: prim, bgApp, bgSidebar: bgSide, text: txt, borderColor: bord, bgInput: bgInp
             });
 
-            // Compact list of themes
+            // Base list
             let list = [
                 t(0, 'Standard Blue', '#2563eb', '#f3f4f6', '#ffffff', '#111827'),
                 t(1, 'Dark Mode', '#3b82f6', '#0f172a', '#1e293b', '#f8fafc', '#334155', '#334155'),
@@ -281,7 +294,6 @@
                 t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
                 t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
                 t(16, 'Rose Gold', '#e11d48', '#e11d48', '#fff1f2', '#ffe4e6', '#881337'),
-                // New Themes
                 t(17, 'Sunset', '#f97316', '#fff7ed', '#ffedd5', '#9a3412'),
                 t(18, 'Aqua', '#06b6d4', '#ecfeff', '#cffafe', '#155e75'),
                 t(19, 'Lavender', '#8b5cf6', '#f5f3ff', '#ede9fe', '#4c1d95'),
@@ -293,11 +305,45 @@
                 t(25, 'Luxury Gold', '#d97706', '#18181b', '#27272a', '#fef3c7', '#78350f'),
                 t(26, 'Neon', '#22c55e', '#000000', '#111111', '#4ade80', '#14532d')
             ];
+
+            // Generate 100+ color variations
+            const colors = [
+                {n:'Red', h:0}, {n:'Orange', h:30}, {n:'Yellow', h:60}, 
+                {n:'Lime', h:90}, {n:'Green', h:120}, {n:'Teal', h:150}, 
+                {n:'Cyan', h:180}, {n:'Blue', h:210}, {n:'Indigo', h:240}, 
+                {n:'Purple', h:270}, {n:'Pink', h:300}, {n:'Rose', h:330}
+            ];
+            
+            let idCounter = 27;
+            
+            colors.forEach(c => {
+                // Light Variant
+                list.push(t(idCounter++, `${c.n} Light`, `hsl(${c.h}, 90%, 50%)`, `hsl(${c.h}, 20%, 97%)`, `#ffffff`, `hsl(${c.h}, 90%, 10%)`));
+                // Dark Variant
+                list.push(t(idCounter++, `${c.n} Dark`, `hsl(${c.h}, 80%, 60%)`, `hsl(${c.h}, 30%, 10%)`, `hsl(${c.h}, 30%, 15%)`, `hsl(${c.h}, 20%, 95%)`));
+                // Pastel Variant
+                list.push(t(idCounter++, `${c.n} Pastel`, `hsl(${c.h}, 70%, 70%)`, `hsl(${c.h}, 30%, 98%)`, `#ffffff`, `hsl(${c.h}, 40%, 40%)`));
+                // Vivid Variant
+                list.push(t(idCounter++, `${c.n} Vivid`, `hsl(${c.h}, 100%, 50%)`, `hsl(${c.h}, 10%, 95%)`, `#ffffff`, `#000000`));
+                // Deep Variant
+                list.push(t(idCounter++, `${c.n} Deep`, `hsl(${c.h}, 70%, 40%)`, `hsl(${c.h}, 20%, 90%)`, `#ffffff`, `hsl(${c.h}, 90%, 15%)`));
+                // Mono Variant (Desaturated app, colored primary)
+                list.push(t(idCounter++, `${c.n} Mono`, `hsl(${c.h}, 60%, 50%)`, `#f3f4f6`, `#ffffff`, `#111827`));
+                // High Contrast
+                list.push(t(idCounter++, `${c.n} Contrast`, `hsl(${c.h}, 90%, 50%)`, `#000000`, `#111111`, `#ffffff`));
+            });
+
             return list;
         }
 
-        function applyTheme(themeId) {
-            const theme = themes.find(t => t.id === Number(themeId)) || themes[0];
+        function applyTheme(themeId, customTheme = null) {
+            let theme;
+            if (themeId === 'custom' && customTheme) {
+                theme = customTheme;
+            } else {
+                theme = themes.find(t => t.id === Number(themeId)) || themes[0];
+            }
+            
             const root = document.documentElement;
             
             root.style.setProperty('--primary', theme.primary);
@@ -307,11 +353,19 @@
             root.style.setProperty('--text-main', theme.text);
             root.style.setProperty('--bg-input', theme.bgInput || '#f9fafb');
             root.style.setProperty('--border-color', theme.borderColor || 'rgba(0,0,0,0.08)');
+            
+            // Standard bubbles (overridden by custom messages later)
             root.style.setProperty('--msg-bubble-me', theme.primary);
             root.style.setProperty('--msg-text-me', '#ffffff');
 
-            currentThemeId = theme.id;
-            localStorage.setItem('chat_theme_id', theme.id);
+            if(themeId === 'custom') {
+                 localStorage.setItem('chat_custom_theme', JSON.stringify(customTheme));
+                 localStorage.setItem('chat_theme_id', 'custom');
+                 currentThemeId = 'custom';
+            } else {
+                 currentThemeId = theme.id;
+                 localStorage.setItem('chat_theme_id', theme.id);
+            }
         }
 
         // --- UTILS ---
@@ -439,10 +493,17 @@
         function init() {
             themes = generateThemes();
             
-            const storedTheme = localStorage.getItem('chat_theme_id');
-            const initTheme = storedTheme ? parseInt(storedTheme) : 0;
-            applyTheme(initTheme);
-            previewThemeId = initTheme;
+            const storedThemeId = localStorage.getItem('chat_theme_id');
+            const storedCustomTheme = localStorage.getItem('chat_custom_theme');
+            
+            if (storedThemeId === 'custom' && storedCustomTheme) {
+                 try {
+                     applyTheme('custom', JSON.parse(storedCustomTheme));
+                 } catch(e) { applyTheme(0); }
+            } else {
+                const initTheme = storedThemeId ? parseInt(storedThemeId) : 0;
+                applyTheme(initTheme);
+            }
 
             // Global Settings Listener
             onSnapshot(doc(db, "settings", "global"), (snap) => {
@@ -463,19 +524,20 @@
                         const userDoc = await getDoc(doc(db, "users", user.uid));
                         if (userDoc.exists()) {
                             currentUser = { id: user.uid, ...userDoc.data() };
-                            // Default values for new/missing fields
+                            // Defaults
                             if (!currentUser.role) currentUser.role = 'vip';
                             if (currentUser.coins === undefined) currentUser.coins = 1000;
                             if (currentUser.gems === undefined) currentUser.gems = 10;
                             
+                            // Load custom user settings if they exist (local session copy for easy access)
+                            if (!currentUser.custom) currentUser.custom = {}; 
+
                             // Start Listeners
                             render();
                             setupFirestoreListeners();
                             updatePresenceAndMigration();
                             setInterval(updatePresenceAndMigration, 60000);
                         } else {
-                            // Account created but no doc? (Edge case)
-                            console.error("User authenticated but no profile found.");
                             renderLogin(document.getElementById('app'));
                         }
                     } catch (e) {
@@ -612,6 +674,7 @@
                          // Update local wallet info
                          currentUser.coins = data.coins || 1000;
                          currentUser.gems = data.gems || 10;
+                         currentUser.custom = data.custom || {}; // Update custom settings in real-time
                          renderSidebar(); // Update Wallet Display
                     }
                     if ((data.lastSeen && data.lastSeen.toMillis() > cutoff) || doc.id === 'simple_bot_uid') {
@@ -859,6 +922,30 @@
                 window.location.href = 'admin.html';
             }
             
+            // --- Customisation Trigger ---
+            if (target.closest('#customiseBtn')) {
+                showCustomiseModal = true;
+                // Initialize pending states with current values
+                pendingAppTheme = localStorage.getItem('chat_custom_theme') 
+                    ? JSON.parse(localStorage.getItem('chat_custom_theme')) 
+                    : { primary: '#2563eb', bgApp: '#f3f4f6', bgSidebar: '#ffffff', text: '#111827' };
+                
+                pendingProfileCustom = { ...currentUser.custom }; 
+                if(!pendingProfileCustom.bubbleColor) pendingProfileCustom.bubbleColor = '#2563eb';
+                if(!pendingProfileCustom.nameColor) pendingProfileCustom.nameColor = '#111827';
+                
+                renderCustomiseModal();
+            }
+            if (target.closest('#closeCustomBtn') || (showCustomiseModal && target.id === 'customOverlay')) {
+                showCustomiseModal = false;
+                renderCustomiseModal();
+            }
+            if (target.closest('#tabAppBtn')) { customiseTab = 'app'; renderCustomiseModal(); }
+            if (target.closest('#tabProfileBtn')) { customiseTab = 'profile'; renderCustomiseModal(); }
+            if (target.closest('#saveAppThemeBtn')) { saveAppTheme(); }
+            if (target.closest('#saveProfileCustomBtn')) { saveProfileCustom(); }
+            
+            // Notifications
             if (target.closest('#notificationBtn')) {
                 showNotifications = !showNotifications;
                 const panel = document.getElementById('notificationPanel');
@@ -882,6 +969,62 @@
             }
         }
         
+        // --- CUSTOMISATION FUNCTIONS ---
+        function saveAppTheme() {
+            // Get values from inputs in renderCustomiseModal
+            const bgApp = document.getElementById('customBgApp').value;
+            const bgSidebar = document.getElementById('customBgSidebar').value;
+            const primary = document.getElementById('customPrimary').value;
+            const text = document.getElementById('customText').value;
+            
+            const newTheme = {
+                id: 'custom',
+                name: 'My Custom Theme',
+                bgApp, bgSidebar, primary, text,
+                primaryHover: primary,
+                borderColor: 'rgba(0,0,0,0.1)',
+                bgInput: bgApp === '#000000' || bgApp === '#111827' ? '#1f2937' : '#f9fafb'
+            };
+            
+            applyTheme('custom', newTheme);
+            showToast('Theme Saved (Local)');
+            showCustomiseModal = false;
+            renderCustomiseModal();
+        }
+
+        async function saveProfileCustom() {
+            // Get values
+            const bubbleColor = document.getElementById('profBubbleColor').value;
+            const textColor = document.getElementById('profBubbleText').value;
+            const nameColor = document.getElementById('profNameColor').value;
+            const cardBg = document.getElementById('profCardBg').value; // could be color or gradient
+            const statusColor = document.getElementById('profStatusColor').value;
+            const glow = document.getElementById('profGlowCheck').checked;
+            const fontBold = document.getElementById('profBoldCheck').checked;
+
+            const newCustom = {
+                bubbleColor,
+                bubbleText: textColor,
+                nameColor,
+                cardBg,
+                statusColor,
+                nameGlow: glow,
+                nameBold: fontBold
+            };
+
+            try {
+                await updateDoc(doc(db, "users", currentUser.id), { custom: newCustom });
+                currentUser.custom = newCustom;
+                showToast('Profile Updated (Public)');
+                showCustomiseModal = false;
+                renderCustomiseModal();
+                renderChatRoom(); // refresh header
+            } catch(e) {
+                console.error(e);
+                showToast('Error saving profile', 'error');
+            }
+        }
+
         // --- NEWS FUNCTIONS ---
         async function submitNews() {
             const text = document.getElementById('newsInputText').value.trim();
@@ -1004,6 +1147,8 @@
                     if (!viewingProfileData.role) viewingProfileData.role = 'vip';
                     if (!viewingProfileData.banner) viewingProfileData.banner = getRoleConfig(viewingProfileData.role).gradient;
                     if (!viewingProfileData.likedBy) viewingProfileData.likedBy = [];
+                    // Ensure custom object exists
+                    if (!viewingProfileData.custom) viewingProfileData.custom = {};
                     
                     if (viewingProfileData.youtubeId && window.YT) {
                         setTimeout(() => {
@@ -1036,11 +1181,11 @@
                         }, 100);
                     }
                 } else {
-                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [] };
+                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [], custom: {} };
                 }
             } catch (e) {
                 console.error("Error fetching profile", e);
-                viewingProfileData = { username: 'Error', color: 'bg-red-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [] };
+                viewingProfileData = { username: 'Error', color: 'bg-red-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [], custom: {} };
             }
             renderProfileModal();
         }
@@ -1129,6 +1274,7 @@
                 renderThemeModal(); 
                 renderProfileModal();
                 renderNewsModal();
+                renderCustomiseModal(); // Init modal
             } else {
                 renderLogin(app);
             }
@@ -1255,6 +1401,7 @@
                             gems: 10,
                             banner: roleConfig.gradient,
                             likedBy: [],
+                            custom: {},
                             joinedAt: serverTimestamp(),
                             lastSeen: serverTimestamp()
                         });
@@ -1284,8 +1431,12 @@
             if(!container) container = document.getElementById('app');
             if(!container) return;
             
-            // Build the top right profile HTML
+            // Apply custom name styles if any
             const safeUsername = escapeHtml(currentUser.username);
+            const customStyle = currentUser.custom?.nameColor ? `color: ${currentUser.custom.nameColor};` : '';
+            const customClass = currentUser.custom?.nameGlow ? 'drop-shadow-md' : '';
+            const customWeight = currentUser.custom?.nameBold ? 'font-black' : 'font-bold';
+            
             const userAvatarHtml = currentUser.avatarImage 
                 ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm ring-2 ring-white user-profile-trigger cursor-pointer" data-user-id="${currentUser.id}">` 
                 : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs ring-2 ring-white user-profile-trigger cursor-pointer" data-user-id="${currentUser.id}">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
@@ -1293,12 +1444,11 @@
             // Check if header exists to avoid full re-render flickering
             const existingHeader = document.getElementById('chatHeader');
             if(existingHeader) {
-                // Just update specific profile parts if needed, but for simplicity we re-render sidebar logic mostly.
-                // Actually, let's just re-inject the profile part into the header if it changed.
+                // Just update specific profile parts if needed
                 const profileContainer = document.getElementById('headerProfileContainer');
                 if(profileContainer) profileContainer.innerHTML = `
                     <div class="flex items-center space-x-2 bg-black/5 px-2 py-1 rounded-full hover:bg-black/10 transition-colors cursor-pointer user-profile-trigger" data-user-id="${currentUser.id}">
-                        <span class="text-xs font-bold theme-text-primary hidden sm:block">${safeUsername}</span>
+                        <span class="text-xs ${customWeight} theme-text-primary hidden sm:block ${customClass}" style="${customStyle}">${safeUsername}</span>
                         ${userAvatarHtml}
                     </div>
                 `;
@@ -1343,7 +1493,7 @@
                             <!-- Top Right Profile -->
                             <div id="headerProfileContainer">
                                 <div class="flex items-center space-x-2 bg-black/5 px-2 py-1 rounded-full hover:bg-black/10 transition-colors cursor-pointer user-profile-trigger" data-user-id="${currentUser.id}">
-                                    <span class="text-xs font-bold theme-text-primary hidden sm:block">${safeUsername}</span>
+                                    <span class="text-xs ${customWeight} theme-text-primary hidden sm:block ${customClass}" style="${customStyle}">${safeUsername}</span>
                                     ${userAvatarHtml}
                                 </div>
                             </div>
@@ -1386,6 +1536,7 @@
                     <div id="themeModalContainer"></div>
                     <div id="profileModalContainer"></div>
                     <div id="newsModalContainer"></div>
+                    <div id="customiseModalContainer"></div>
                 </div>
             `;
 
@@ -1469,7 +1620,6 @@
                             return;
                         }
                         try {
-                            // Using batch for better reliability and performance
                             const snap = await getDocs(collection(db, "messages"));
                             const batch = writeBatch(db);
                             let count = 0;
@@ -1540,9 +1690,10 @@
                         senderId: currentUser.id,
                         senderName: currentUser.username,
                         senderColor: currentUser.color,
+                        senderCustom: currentUser.custom || {}, // Store current snapshot of custom styles
                         timestamp: serverTimestamp(),
                         edited: false,
-                        reactions: {} // Initialize reactions map to ensure updates work
+                        reactions: {}
                     });
                 } catch (err) {
                     console.error("Error sending", err);
@@ -1578,13 +1729,6 @@
                     const time = post.timestamp ? new Date(post.timestamp.toMillis()).toLocaleString() : 'Just now';
                     const isLiked = post.likes && post.likes.includes(currentUser.id);
                     const likeCount = post.likes ? post.likes.length : 0;
-                    
-                    const commentsHtml = (post.comments || []).map(c => `
-                        <div class="flex items-start space-x-2 mt-2 bg-gray-50 p-2 rounded-lg">
-                            <div class="font-bold text-[10px] text-gray-700 shrink-0">${escapeHtml(c.username)}</div>
-                            <div class="text-[11px] text-gray-600 break-words">${escapeHtml(c.text)}</div>
-                        </div>
-                    `).join('');
                     
                     const avatarHtml = post.authorAvatar
                         ? `<img src="${post.authorAvatar}" class="w-10 h-10 rounded-full object-cover shadow-sm">`
@@ -1730,6 +1874,16 @@
                     <div class="pt-2 border-t theme-border-primary">
                         <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Settings</h3>
                         
+                        <button id="customiseBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 mb-1 group">
+                             <div class="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-rose-500 text-white shadow-sm group-hover:scale-110 transition-transform">
+                                <i data-lucide="wand-2" class="w-3 h-3"></i>
+                             </div>
+                             <div>
+                                <p class="font-bold text-xs text-transparent bg-clip-text bg-gradient-to-r from-pink-600 to-purple-600">Customise</p>
+                                <p class="text-[10px] opacity-60">Style Everything</p>
+                             </div>
+                        </button>
+
                         <button id="notificationBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 relative">
                             <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-500 relative">
                                 <i data-lucide="bell" class="w-3 h-3"></i>
@@ -1751,7 +1905,7 @@
                             </div>
                             <div>
                                 <p class="font-medium text-xs">Themes</p>
-                                <p class="text-[10px] opacity-60">Customization</p>
+                                <p class="text-[10px] opacity-60">Presets</p>
                             </div>
                         </button>
                         ${currentUser.role === 'developer' ? `
@@ -1788,12 +1942,7 @@
                 }
             }
 
-            if (!container) {
-                // Should be created inside sidebar container, actually let's append it to the body or sidebar relative
-                // Since sidebar has overflow-y auto, it might clip. Let's make it a fixed overlay or append to specific place.
-                // Best place is inside the sidebar logic.
-                return;
-            }
+            if (!container) return;
             
             if (notifications.length === 0) {
                 container.innerHTML = `<div class="p-4 text-center opacity-50 text-xs italic">No notifications</div>`;
@@ -1820,6 +1969,216 @@
                 </div>
                 `;
             }).join('');
+            
+            if(window.lucide) window.lucide.createIcons();
+        }
+        
+        // --- CUSTOMISE MODAL ---
+        function renderCustomiseModal() {
+            const container = document.getElementById('customiseModalContainer');
+            if (!container) return;
+            
+            if (!showCustomiseModal) { container.innerHTML = ''; return; }
+            
+            // Default pending states if empty
+            if (!pendingAppTheme) pendingAppTheme = { primary: '#2563eb', bgApp: '#f3f4f6', bgSidebar: '#ffffff', text: '#111827' };
+            if (!pendingProfileCustom.bubbleColor) pendingProfileCustom.bubbleColor = '#2563eb';
+
+            const activeTabClass = "border-b-2 border-blue-600 text-blue-600 bg-blue-50";
+            const inactiveTabClass = "text-gray-500 hover:text-gray-700 hover:bg-gray-50";
+
+            container.innerHTML = `
+                <div id="customOverlay" class="fixed inset-0 z-[80] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
+                         <!-- Header -->
+                         <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
+                            <div>
+                                <h2 class="text-xl font-black text-gray-900 flex items-center gap-2">
+                                    <i data-lucide="wand-2" class="w-5 h-5 text-pink-500"></i> Customise
+                                </h2>
+                                <p class="text-xs text-gray-500">Make it truly yours.</p>
+                            </div>
+                            <button id="closeCustomBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                         </div>
+                         
+                         <!-- Tabs -->
+                         <div class="flex border-b bg-white shrink-0">
+                            <button id="tabAppBtn" class="flex-1 py-3 text-sm font-bold text-center transition-colors ${customiseTab === 'app' ? activeTabClass : inactiveTabClass}">
+                                <i data-lucide="monitor" class="w-4 h-4 inline mr-2"></i> App Theme (Local)
+                            </button>
+                            <button id="tabProfileBtn" class="flex-1 py-3 text-sm font-bold text-center transition-colors ${customiseTab === 'profile' ? activeTabClass : inactiveTabClass}">
+                                <i data-lucide="user-circle" class="w-4 h-4 inline mr-2"></i> My Persona (Public)
+                            </button>
+                         </div>
+                         
+                         <!-- Content -->
+                         <div class="flex-1 overflow-y-auto p-6 bg-gray-50">
+                            ${customiseTab === 'app' ? `
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div class="space-y-6">
+                                        <div class="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 class="font-bold text-gray-900 mb-4 border-b pb-2">Interface Colors</h3>
+                                            
+                                            <div class="space-y-4">
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">App Background</label>
+                                                    <div class="flex gap-3">
+                                                        <input type="color" id="customBgApp" value="${pendingAppTheme.bgApp}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Sidebar Background</label>
+                                                    <div class="flex gap-3">
+                                                        <input type="color" id="customBgSidebar" value="${pendingAppTheme.bgSidebar}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Text Color</label>
+                                                    <div class="flex gap-3">
+                                                        <input type="color" id="customText" value="${pendingAppTheme.text}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Primary Accent</label>
+                                                    <div class="flex gap-3">
+                                                        <input type="color" id="customPrimary" value="${pendingAppTheme.primary}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button id="saveAppThemeBtn" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105">
+                                            Apply Custom Theme
+                                        </button>
+                                        <p class="text-xs text-center text-gray-400">Only visible to you.</p>
+                                    </div>
+                                    
+                                    <!-- Preview (Static representation) -->
+                                    <div class="bg-white p-6 rounded-xl border shadow-sm flex flex-col items-center justify-center opacity-70 pointer-events-none select-none">
+                                        <div class="text-center space-y-2">
+                                            <i data-lucide="layout" class="w-16 h-16 text-gray-300 mx-auto"></i>
+                                            <h4 class="font-bold text-gray-400">Live Preview Coming Soon</h4>
+                                            <p class="text-xs text-gray-400">Apply to see changes immediately.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    <div class="space-y-6">
+                                        <!-- User Card Customisation -->
+                                        <div class="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 class="font-bold text-gray-900 mb-4 border-b pb-2 flex items-center gap-2"><i data-lucide="id-card" class="w-4 h-4"></i> User Card Style</h3>
+                                            <div class="space-y-4">
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Card Background</label>
+                                                    <input type="color" id="profCardBg" value="${pendingProfileCustom.cardBg || '#ffffff'}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                    <p class="text-[10px] text-gray-400 mt-1">Solid color override for profile card</p>
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Status Text Color</label>
+                                                    <input type="color" id="profStatusColor" value="${pendingProfileCustom.statusColor || '#6b7280'}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Chat Bubble Customisation -->
+                                        <div class="bg-white p-6 rounded-xl border shadow-sm">
+                                            <h3 class="font-bold text-gray-900 mb-4 border-b pb-2 flex items-center gap-2"><i data-lucide="message-square" class="w-4 h-4"></i> Chat Appearance</h3>
+                                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Bubble Color</label>
+                                                    <input type="color" id="profBubbleColor" value="${pendingProfileCustom.bubbleColor}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                </div>
+                                                <div>
+                                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Text Color</label>
+                                                    <input type="color" id="profBubbleText" value="${pendingProfileCustom.bubbleText || '#ffffff'}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="space-y-3 pt-2 border-t border-gray-100">
+                                                <h4 class="text-xs font-bold text-gray-900">Username Style</h4>
+                                                <div>
+                                                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name Color</label>
+                                                     <input type="color" id="profNameColor" value="${pendingProfileCustom.nameColor}" class="h-10 w-full cursor-pointer rounded border border-gray-300">
+                                                </div>
+                                                <div class="flex items-center gap-4 mt-2">
+                                                    <label class="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+                                                        <input type="checkbox" id="profGlowCheck" class="rounded text-blue-600 focus:ring-blue-500" ${pendingProfileCustom.nameGlow ? 'checked' : ''}>
+                                                        <span>Glow Effect</span>
+                                                    </label>
+                                                    <label class="flex items-center space-x-2 text-xs font-medium cursor-pointer">
+                                                        <input type="checkbox" id="profBoldCheck" class="rounded text-blue-600 focus:ring-blue-500" ${pendingProfileCustom.nameBold ? 'checked' : ''}>
+                                                        <span>Extra Bold</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="space-y-6">
+                                        <!-- Preview Section -->
+                                        <div class="bg-white p-6 rounded-xl border shadow-sm sticky top-0">
+                                            <h3 class="font-bold text-gray-900 mb-4 border-b pb-2">Public Preview</h3>
+                                            
+                                            <div class="space-y-6">
+                                                <!-- Message Preview -->
+                                                <div>
+                                                    <p class="text-xs font-bold text-gray-400 uppercase mb-2">Chat Message</p>
+                                                    <div class="flex justify-end items-end gap-2">
+                                                        <div class="relative rounded-xl px-3 py-2 shadow-sm rounded-tr-none max-w-[80%]" style="background-color: ${pendingProfileCustom.bubbleColor}; color: ${pendingProfileCustom.bubbleText || '#ffffff'};">
+                                                            <div class="text-sm">Hey! This is how I look in chat. 😎</div>
+                                                            <div class="flex justify-end mt-1 opacity-60 text-[9px]">10:42 AM</div>
+                                                        </div>
+                                                        <div class="w-8 h-8 rounded-full bg-gray-300 overflow-hidden border-2 border-white shadow-sm">
+                                                             ${currentUser.avatarImage ? `<img src="${currentUser.avatarImage}" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center bg-gray-500 text-white text-xs font-bold">${currentUser.username[0]}</div>`}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Header Name Preview -->
+                                                <div>
+                                                    <p class="text-xs font-bold text-gray-400 uppercase mb-2">Username Display</p>
+                                                    <div class="bg-gray-100 p-3 rounded-lg flex items-center gap-3">
+                                                        <div class="w-8 h-8 rounded-full bg-gray-300 overflow-hidden">
+                                                            ${currentUser.avatarImage ? `<img src="${currentUser.avatarImage}" class="w-full h-full object-cover">` : ''}
+                                                        </div>
+                                                        <span class="text-sm ${pendingProfileCustom.nameBold ? 'font-black' : 'font-bold'} ${pendingProfileCustom.nameGlow ? 'drop-shadow-md' : ''}" style="color: ${pendingProfileCustom.nameColor}">${currentUser.username}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <button id="saveProfileCustomBtn" class="w-full py-3 bg-pink-600 hover:bg-pink-700 text-white font-bold rounded-xl shadow-lg transition-transform hover:scale-105">
+                                            Save Persona
+                                        </button>
+                                        <p class="text-xs text-center text-gray-400">Visible to everyone.</p>
+                                    </div>
+                                </div>
+                            `}
+                         </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add listeners for live update of preview if in profile tab
+            if(customiseTab === 'profile') {
+                const updatePreview = () => {
+                    pendingProfileCustom.bubbleColor = document.getElementById('profBubbleColor').value;
+                    pendingProfileCustom.bubbleText = document.getElementById('profBubbleText').value;
+                    pendingProfileCustom.nameColor = document.getElementById('profNameColor').value;
+                    pendingProfileCustom.nameBold = document.getElementById('profBoldCheck').checked;
+                    pendingProfileCustom.nameGlow = document.getElementById('profGlowCheck').checked;
+                    renderCustomiseModal(); // Re-render to show updates
+                    // Note: This causes input loss of focus. Ideally we use separate DOM updates but for simplicity in this structure re-render works.
+                    // To prevent focus loss, we could just update style attributes of preview elements directly.
+                };
+                
+                ['profBubbleColor', 'profBubbleText', 'profNameColor'].forEach(id => {
+                    document.getElementById(id).addEventListener('change', updatePreview);
+                });
+                ['profBoldCheck', 'profGlowCheck'].forEach(id => {
+                    document.getElementById(id).addEventListener('click', updatePreview);
+                });
+            }
             
             if(window.lucide) window.lucide.createIcons();
         }
@@ -1867,6 +2226,11 @@
                 
                 // Rank Badge HTML
                 const rankBadge = `<span class="ml-1 inline-flex items-center justify-center rounded-full ${role.bg} p-0.5 border ${role.border}" title="${role.label}"><i data-lucide="${role.icon}" class="w-3 h-3 ${role.color} ${role.fill}"></i></span>`;
+                
+                // Custom Name Styles
+                const customStyle = u.custom?.nameColor ? `color: ${u.custom.nameColor};` : '';
+                const customClass = u.custom?.nameGlow ? 'drop-shadow-md' : '';
+                const customWeight = u.custom?.nameBold ? 'font-black' : 'font-semibold';
 
                 return `
                 <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
@@ -1876,7 +2240,7 @@
                    </div>
                    <div class="ml-2.5 min-w-0 flex-1 overflow-hidden">
                       <div class="flex items-center">
-                          <p class="text-xs font-semibold truncate max-w-[100px] ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
+                          <p class="text-xs truncate max-w-[100px] ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'} ${customWeight} ${customClass}" style="${customStyle}">
                               ${escapeHtml(u.username)}
                           </p>
                           ${rankBadge}
@@ -1895,7 +2259,17 @@
 
             if (!showThemeModal) { container.innerHTML = ''; return; }
 
-            const t = themes.find(x => x.id === previewThemeId) || themes[0];
+            // Handle Preview Data
+            let t = themes.find(x => x.id === previewThemeId);
+            // If previewing custom theme that isn't saved yet or existing custom
+            if (previewThemeId === 'custom') {
+                 try {
+                     t = JSON.parse(localStorage.getItem('chat_custom_theme')) || themes[0];
+                     t.name = "My Custom Theme";
+                 } catch(e) { t = themes[0]; }
+            }
+            if(!t) t = themes[0];
+
             const previewStyle = `
                 --primary: ${t.primary};
                 --bg-app: ${t.bgApp};
@@ -1948,17 +2322,13 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
-        // ... Profile Modal (Same logic, ensured rendering) ...
         function renderProfileModal() {
             const container = document.getElementById('profileModalContainer');
             if (!container) return;
 
             if (!showProfileModal) { container.innerHTML = ''; return; }
             
-            // Standard render logic from previous block maintained implicitly, no changes needed to core logic here
-            // Re-pasting for completeness if XML requires full file content, otherwise relying on structure.
-            // Assuming full file replacement, here is the function:
-            const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip', likedBy: [] };
+            const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip', likedBy: [], custom: {} };
             const role = getRoleConfig(data.role);
             
             const banner = isEditingProfile 
@@ -1977,10 +2347,17 @@
             const likeCount = likedBy.length;
             const bannerStyle = isBannerImage ? `background-image: ${banner}; background-size: cover; background-position: center;` : '';
             const bannerClass = isBannerImage ? `h-32 relative bg-gray-200` : `h-32 bg-gradient-to-r ${banner} relative`;
+            
+            // Custom Card Styles
+            const customCardBg = !isEditingProfile && data.custom?.cardBg ? `background: ${data.custom.cardBg};` : '';
+            const customStatusColor = !isEditingProfile && data.custom?.statusColor ? `color: ${data.custom.statusColor};` : '';
+            const customNameStyle = !isEditingProfile && data.custom?.nameColor ? `color: ${data.custom.nameColor};` : '';
+            const customNameClass = !isEditingProfile && data.custom?.nameGlow ? 'drop-shadow-md' : '';
+            const customNameWeight = !isEditingProfile && data.custom?.nameBold ? 'font-black' : 'font-black';
 
             container.innerHTML = `
                 <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-visible transform transition-all scale-100 relative max-h-[90vh] overflow-y-auto">
+                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-visible transform transition-all scale-100 relative max-h-[90vh] overflow-y-auto" style="${customCardBg}">
                         <button id="closeProfileBtn" class="absolute top-4 right-4 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-full text-white transition-colors">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
@@ -2072,8 +2449,8 @@
                                     </div>
                                 ` : `
                                     <div class="flex flex-col items-center justify-center space-y-1">
-                                        <h2 class="text-2xl font-black text-gray-900 leading-tight">${escapeHtml(username)}</h2>
-                                        ${data.status ? `<div class="bg-gray-100 px-3 py-1 rounded-full text-xs text-gray-600 italic">"${escapeHtml(data.status)}"</div>` : ''}
+                                        <h2 class="text-2xl ${customNameWeight} text-gray-900 leading-tight ${customNameClass}" style="${customNameStyle}">${escapeHtml(username)}</h2>
+                                        ${data.status ? `<div class="bg-gray-100 px-3 py-1 rounded-full text-xs text-gray-600 italic" style="${customStatusColor}">"${escapeHtml(data.status)}"</div>` : ''}
                                         <div class="flex items-center space-x-2 mt-1 text-xs text-gray-500">
                                             ${data.age ? `<span>${escapeHtml(data.age)} yrs</span>` : ''}
                                             ${data.age && data.gender ? '<span>•</span>' : ''}
@@ -2131,7 +2508,6 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
-        // ... getMessageHTML and renderChatMessages (kept as is, but ensures logic matches) ...
         function getMessageHTML(msg, isMe, safeName) {
             let cleanHtml = '';
             if (window.marked && window.DOMPurify) { 
@@ -2141,7 +2517,7 @@
             
             cleanHtml = cleanHtml.replace(/(@\w+)/g, (match) => {
                 const mentionedName = match.substring(1).toLowerCase();
-                const isMeMentioned = mentionedName === currentUser.username.toLowerCase();
+                const isMeMentioned = currentUser && mentionedName === currentUser.username.toLowerCase();
                 if (isMeMentioned) {
                     return `<span class="mention-me">${match}</span>`;
                 }
@@ -2154,20 +2530,36 @@
                 imageHtml = `<img src="${msg.image}" class="chat-image" alt="attachment" onclick="window.open(this.src, '_blank')">`;
             }
 
+            // Determine custom styles for sender
+            // Priority: msg.senderCustom (snapshot) -> onlineUser map -> null
+            let customBubbleStyle = '';
+            let customNameStyle = '';
+            
+            // Try to find live custom data if user is online, otherwise fallback to message snapshot
+            const onlineSender = onlineUsers.find(u => u.id === msg.senderId);
+            const customData = onlineSender?.custom || msg.senderCustom || {};
+            
+            if (isMe) {
+                // If it's me, use my current settings for immediate feedback, or fallback
+                const myCustom = currentUser?.custom || {};
+                if (myCustom.bubbleColor) customBubbleStyle = `background-color: ${myCustom.bubbleColor}; color: ${myCustom.bubbleText || '#ffffff'};`;
+            } else {
+                if (customData.bubbleColor) customBubbleStyle = `background-color: ${customData.bubbleColor}; color: ${customData.bubbleText || '#ffffff'};`;
+                if (customData.nameColor) customNameStyle = `color: ${customData.nameColor};`;
+            }
+
             let avatarSrc = null;
             if(msg.senderId === currentUser.id) avatarSrc = currentUser.avatarImage;
-            else {
-                const online = onlineUsers.find(u => u.id === msg.senderId);
-                if(online) avatarSrc = online.avatarImage;
-            }
+            else if(onlineSender) avatarSrc = onlineSender.avatarImage;
             
             const avatarHtml = avatarSrc 
                 ? `<img src="${avatarSrc}" class="h-7 w-7 rounded-full object-cover shadow-sm ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110 user-profile-trigger" data-user-id="${msg.senderId}">`
                 : `<div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">${safeName.substring(0, 2).toUpperCase()}</div>`;
             
             const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
-            const isMentionedContainer = msg.text.toLowerCase().includes(`@${currentUser.username.toLowerCase()}`);
+            const isMentionedContainer = currentUser && msg.text.toLowerCase().includes(`@${currentUser.username.toLowerCase()}`);
             const containerStyle = isMentionedContainer ? 'ring-2 ring-yellow-300 bg-yellow-50/10' : '';
+            const bubbleClass = isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other';
 
             // Reactions Rendering
             let reactionsHtml = '';
@@ -2188,7 +2580,7 @@
                 }
             }
 
-            // Reaction Menu in Actions
+            // Reaction Menu
             const reactionMenuHtml = REACTIONS_LIST.map(e => `
                 <button class="reaction-btn-trigger p-1 hover:scale-125 transition-transform" data-id="${msg.id}" data-emoji="${e}">${e}</button>
             `).join('');
@@ -2205,8 +2597,8 @@
                         <div class="flex bg-white border border-gray-200 rounded-full shadow-sm px-1 py-0.5 space-x-0.5">${reactionMenuHtml}</div>
                     </div>`}
                     
-                    <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px] ${containerStyle}">
-                        ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
+                    <div class="relative rounded-xl px-3 py-2 shadow-sm ${bubbleClass} min-w-[50px] ${containerStyle}" style="${customBubbleStyle}">
+                        ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}" style="${customNameStyle}">${safeName}</p>` : ''}
                         ${imageHtml}
                         <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
                         ${reactionsHtml}
