@@ -84,6 +84,20 @@
         .eq-bar:nth-child(3) { animation-delay: 0.2s; }
         @keyframes eq { 0% { height: 30%; } 100% { height: 100%; } }
 
+        /* Reactions */
+        .reaction-pill { 
+            display: inline-flex; items-center: center; 
+            padding: 2px 6px; border-radius: 12px; 
+            font-size: 10px; margin-right: 4px; margin-top: 4px;
+            background-color: rgba(255,255,255,0.5); 
+            border: 1px solid rgba(0,0,0,0.05);
+            cursor: pointer; transition: all 0.2s;
+        }
+        .reaction-pill:hover { background-color: rgba(255,255,255,0.8); transform: scale(1.05); }
+        .reaction-pill.active { background-color: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); }
+        .bubble-me .reaction-pill { background-color: rgba(0,0,0,0.1); border-color: rgba(0,0,0,0.1); color: white; }
+        .bubble-me .reaction-pill.active { background-color: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.5); }
+
         /* Dynamic Theme Classes */
         .theme-scope { background-color: var(--bg-app); color: var(--text-main); }
         .theme-bg-app { background-color: var(--bg-app); color: var(--text-main); }
@@ -98,6 +112,8 @@
         .bubble-other { background-color: var(--bg-sidebar); color: var(--text-main); border: 1px solid var(--border-color); }
         .theme-input { background-color: var(--bg-input); color: var(--text-main); border-color: var(--border-color); }
     </style>
+    <!-- YouTube API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body class="theme-bg-app font-sans antialiased h-screen overflow-hidden text-sm">
     <div id="app" class="h-full w-full"></div>
@@ -106,12 +122,10 @@
     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden">
     <input type="file" id="bannerUploadInput" accept="image/png, image/jpeg, image/gif, image/webp" class="hidden">
     <input type="file" id="chatImageInput" accept="image/*" class="hidden">
-    <input type="file" id="musicUploadInput" accept="audio/*" class="hidden">
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
         // --- FIREBASE CONFIG ---
         const firebaseConfig = {
@@ -126,7 +140,6 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const storage = getStorage(app);
 
         // --- SOUNDS ---
         const NOTIFICATION_SOUND = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; 
@@ -144,8 +157,9 @@
         let mentionQuery = null;
         let mentionIndex = -1;
         
-        // Music State
-        let profileAudio = new Audio();
+        // Music State (YouTube)
+        let player = null;
+        let isPlayerReady = false;
         let isMusicPlaying = false;
         
         // Modal States
@@ -155,12 +169,17 @@
         let viewingProfileId = null;
         let viewingProfileData = null;
         let isEditingProfile = false; 
-        let editProfileForm = { username: '', color: '', banner: '', avatarImage: null, bannerImage: null, musicUrl: null }; 
+        let editProfileForm = { 
+            username: '', color: '', banner: '', 
+            avatarImage: null, bannerImage: null, 
+            status: '', youtubeId: '' 
+        }; 
 
         let currentThemeId = 0;
         let themes = [];
 
         // --- CONSTANTS ---
+        const REACTIONS_LIST = ['❤️', '😂', '😮', '😢', '👍', '🔥'];
         const AVATAR_COLORS = [
             'bg-red-500', 'bg-orange-500', 'bg-amber-500', 'bg-green-500', 
             'bg-emerald-500', 'bg-teal-500', 'bg-cyan-500', 'bg-blue-500', 
@@ -203,40 +222,6 @@
                 t(13, 'Bumblebee', '#facc15', '#18181b', '#27272a', '#fefce8', '#3f3f46', '#27272a'),
                 t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
                 t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
-                t(16, 'Vaporwave', '#d8b4fe', '#fdf4ff', '#fae8ff', '#581c87'),
-                t(17, 'Sunset', '#f97316', '#fff7ed', '#fffaf0', '#7c2d12'),
-                t(18, 'Ocean', '#06b6d4', '#ecfeff', '#f0f9ff', '#0e7490'),
-                t(19, 'Lavender', '#8b5cf6', '#f5f3ff', '#ffffff', '#4c1d95'),
-                t(20, 'Coffee', '#78350f', '#fffbeb', '#fef3c7', '#451a03'),
-                t(21, 'Slate', '#64748b', '#f1f5f9', '#ffffff', '#0f172a'),
-                t(22, 'Monochrome', '#525252', '#f5f5f5', '#ffffff', '#000000'),
-                t(23, 'Terminal', '#4ade80', '#000000', '#111111', '#4ade80', '#333333', '#111111'),
-                t(24, 'Pastel Pink', '#f9a8d4', '#fff1f2', '#ffffff', '#831843'),
-                t(25, 'Pastel Blue', '#93c5fd', '#eff6ff', '#ffffff', '#1e3a8a'),
-                t(26, 'Mint', '#6ee7b7', '#f0fdf4', '#ffffff', '#064e3b'),
-                t(27, 'Peach', '#fdba74', '#fff7ed', '#ffffff', '#7c2d12'),
-                t(28, 'Lemon', '#fde047', '#fefce8', '#ffffff', '#713f12'),
-                t(29, 'Ruby', '#be123c', '#fff1f2', '#ffe4e6', '#881337'),
-                t(30, 'Sapphire', '#1d4ed8', '#eff6ff', '#dbeafe', '#1e3a8a'),
-                t(31, 'Emerald', '#059669', '#ecfdf5', '#d1fae5', '#064e3b'),
-                t(32, 'Amethyst', '#7c3aed', '#f5f3ff', '#ede9fe', '#4c1d95'),
-                t(33, 'Topaz', '#eab308', '#fefce8', '#fef9c3', '#713f12'),
-                t(34, 'Rose Gold', '#fb7185', '#fff1f2', '#fff0f7', '#881337'),
-                t(35, 'Space Gray', '#4b5563', '#111827', '#1f2937', '#f3f4f6', '#374151', '#374151'),
-                t(36, 'Navy', '#1e3a8a', '#f1f5f9', '#ffffff', '#0f172a'),
-                t(37, 'Berry', '#be185d', '#fdf2f8', '#ffffff', '#831843'),
-                t(38, 'Teal', '#0d9488', '#f0fdfa', '#ffffff', '#134e4a'),
-                t(39, 'Cyan', '#0891b2', '#ecfeff', '#ffffff', '#164e63'),
-                t(40, 'Lime', '#65a30d', '#f7fee7', '#ffffff', '#365314'),
-                t(41, 'Orange', '#ea580c', '#fff7ed', '#ffffff', '#7c2d12'),
-                t(42, 'Amber', '#d97706', '#fffbeb', '#ffffff', '#78350f'),
-                t(43, 'Violet', '#7c3aed', '#f5f3ff', '#ffffff', '#4c1d95'),
-                t(44, 'Fuchsia', '#c026d3', '#fdf4ff', '#ffffff', '#701a75'),
-                t(45, 'Crimson', '#9f1239', '#fff1f2', '#ffffff', '#881337'),
-                t(46, 'Chocolate', '#3f2c22', '#fdf8f6', '#ffffff', '#281c16'),
-                t(47, 'Olive', '#3f6212', '#f7fee7', '#ffffff', '#1a2e05'),
-                t(48, 'Sky', '#0ea5e9', '#f0f9ff', '#ffffff', '#0c4a6e'),
-                t(49, 'Neutral', '#525252', '#e5e5e5', '#f5f5f5', '#171717'),
             ];
             return list;
         }
@@ -340,6 +325,13 @@
             };
         }
 
+        function getYouTubeId(url) {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
         // --- APP INITIALIZATION ---
         function init() {
             themes = generateThemes();
@@ -398,29 +390,6 @@
                     } catch(err) { alert(err.message); }
                 }
             });
-            
-            const musicInput = document.getElementById('musicUploadInput');
-            if(musicInput) musicInput.addEventListener('change', async (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const btn = document.getElementById('uploadMusicBtnLabel');
-                    if(btn) btn.textContent = 'Uploading...';
-                    
-                    try {
-                        // Use Firebase Storage for large files
-                        const storageRef = ref(storage, 'profile_music/' + currentUser.id + '/' + file.name);
-                        const snapshot = await uploadBytes(storageRef, file);
-                        const url = await getDownloadURL(snapshot.ref);
-                        
-                        editProfileForm.musicUrl = url;
-                        renderProfileModal();
-                    } catch (err) {
-                        console.error("Upload failed", err);
-                        alert("Upload failed. Storage might not be enabled for this project.");
-                        if(btn) btn.textContent = 'Upload Music';
-                    }
-                }
-            });
         }
 
         async function updatePresenceAndMigration() {
@@ -456,7 +425,6 @@
                 changes.forEach(change => {
                      if (change.type === 'added') {
                          const d = change.doc.data();
-                         // Play sound if not me, AND (recent message OR I am mentioned)
                          if (d.senderId !== currentUser.id && !played) {
                              const now = Date.now();
                              const ts = d.timestamp ? d.timestamp.toMillis() : now;
@@ -489,6 +457,7 @@
                 });
                 onlineUsers = active.sort((a,b) => a.username.localeCompare(b.username));
                 renderRightSidebar();
+                renderSidebar(); // Update My Status in sidebar
             });
 
             const typingQ = query(collection(db, "typing"));
@@ -512,10 +481,10 @@
             const target = e.target;
             
             if (target.closest('#closeProfileBtn') || target.closest('#profileOverlay') === target) {
+                if (player && player.pauseVideo) player.pauseVideo();
+                isMusicPlaying = false;
                 showProfileModal = false;
                 renderProfileModal();
-                profileAudio.pause(); // Stop music when closing
-                isMusicPlaying = false;
                 return;
             }
 
@@ -526,14 +495,11 @@
                 return;
             }
             
-            // Mention Suggestion Click
             const mentionItem = target.closest('.mention-item');
             if (mentionItem) {
                 const username = mentionItem.dataset.username;
                 const input = document.getElementById('messageInput');
                 const before = input.value.substring(0, mentionIndex);
-                // Regex to verify we are replacing the right thing
-                // We just append the username + space
                 input.value = before + username + ' ';
                 input.focus();
                 mentionQuery = null;
@@ -542,21 +508,28 @@
                 return;
             }
 
-            // Music Toggle
-            if (target.closest('#toggleMusicBtn')) {
-                if (isMusicPlaying) {
-                    profileAudio.pause();
-                    isMusicPlaying = false;
-                } else {
-                    profileAudio.play();
-                    isMusicPlaying = true;
-                }
-                renderProfileModal(); // Re-render to update button icon
+            // Reaction Click
+            const reactionBtn = target.closest('.reaction-btn-trigger');
+            if (reactionBtn) {
+                const emoji = reactionBtn.dataset.emoji;
+                const msgId = reactionBtn.dataset.id;
+                await toggleReaction(msgId, emoji);
+                return;
             }
-            
-            // Upload Music
-            if (target.closest('#uploadMusicBtn')) {
-                document.getElementById('musicUploadInput').click();
+
+            // Music Toggle (YouTube)
+            if (target.closest('#toggleMusicBtn')) {
+                if (player && player.getPlayerState) {
+                    const state = player.getPlayerState();
+                    if (state === 1) { // Playing
+                        player.pauseVideo();
+                        isMusicPlaying = false;
+                    } else {
+                        player.playVideo();
+                        isMusicPlaying = true;
+                    }
+                    renderProfileModal(); 
+                }
             }
 
             if (target.closest('#editProfileBtn')) {
@@ -567,7 +540,8 @@
                     banner: viewingProfileData.banner || getRoleConfig(viewingProfileData.role).gradient,
                     avatarImage: viewingProfileData.avatarImage || null,
                     bannerImage: viewingProfileData.bannerImage || null,
-                    musicUrl: viewingProfileData.musicUrl || null
+                    youtubeId: viewingProfileData.youtubeId || '',
+                    status: viewingProfileData.status || ''
                 };
                 renderProfileModal();
             }
@@ -623,6 +597,24 @@
             if (themeOption) { previewThemeId = Number(themeOption.dataset.id); renderThemeModal(); }
         }
 
+        async function toggleReaction(msgId, emoji) {
+            const msg = messages.find(m => m.id === msgId);
+            if (!msg) return;
+            
+            const reactions = msg.reactions || {};
+            let users = reactions[emoji] || [];
+            
+            if (users.includes(currentUser.id)) {
+                users = users.filter(id => id !== currentUser.id);
+            } else {
+                users.push(currentUser.id);
+            }
+            
+            // Clean up empty arrays? No, standard logic fine.
+            const updates = { [`reactions.${emoji}`]: users };
+            await updateDoc(doc(db, "messages", msgId), updates);
+        }
+
         async function openProfileModal(userId) {
             viewingProfileId = userId;
             showProfileModal = true;
@@ -637,20 +629,29 @@
                     if (!viewingProfileData.role) viewingProfileData.role = 'vip';
                     if (!viewingProfileData.banner) viewingProfileData.banner = getRoleConfig(viewingProfileData.role).gradient;
                     
-                    // Auto-play music if exists
-                    if (viewingProfileData.musicUrl) {
-                        profileAudio.src = viewingProfileData.musicUrl;
-                        profileAudio.play().then(() => {
-                            isMusicPlaying = true;
-                            renderProfileModal();
-                        }).catch(e => {
-                            console.log("Auto-play blocked", e);
-                            isMusicPlaying = false;
-                            renderProfileModal();
-                        });
-                    } else {
-                        profileAudio.pause();
-                        isMusicPlaying = false;
+                    // Init YouTube Player if ID exists
+                    if (viewingProfileData.youtubeId && window.YT) {
+                        setTimeout(() => {
+                            if(document.getElementById('hidden-player')) {
+                                player = new YT.Player('hidden-player', {
+                                    height: '0', width: '0',
+                                    videoId: viewingProfileData.youtubeId,
+                                    events: {
+                                        'onReady': (event) => {
+                                            isPlayerReady = true;
+                                            event.target.playVideo();
+                                            isMusicPlaying = true;
+                                            renderProfileModal();
+                                        },
+                                        'onStateChange': (event) => {
+                                            if (event.data === YT.PlayerState.PLAYING) isMusicPlaying = true;
+                                            else isMusicPlaying = false;
+                                            renderProfileModal();
+                                        }
+                                    }
+                                });
+                            }
+                        }, 100);
                     }
                 } else {
                     viewingProfileData = { username: 'Unknown', color: 'bg-gray-500', role: 'vip', banner: BANNER_GRADIENTS[0] };
@@ -664,6 +665,8 @@
 
         async function saveProfile() {
             const newName = document.getElementById('editUsernameInput').value.trim();
+            const status = document.getElementById('editStatusInput').value.trim();
+            const youtubeLink = document.getElementById('editYoutubeInput').value.trim();
             const errorEl = document.getElementById('editProfileError');
             
             if (!newName || newName.length < 2) {
@@ -682,13 +685,23 @@
                 }
             }
 
+            let yId = editProfileForm.youtubeId;
+            if (youtubeLink) {
+                const extracted = getYouTubeId(youtubeLink);
+                if (extracted) yId = extracted;
+                else if (youtubeLink.length === 11) yId = youtubeLink; // assume ID if not url
+            } else if (youtubeLink === '') {
+                yId = '';
+            }
+
             try {
                 const updateData = {
                     username: newName,
                     usernameLower: newName.toLowerCase(),
                     avatarImage: editProfileForm.avatarImage,
                     bannerImage: editProfileForm.bannerImage,
-                    musicUrl: editProfileForm.musicUrl
+                    status: status,
+                    youtubeId: yId
                 };
                 
                 if(editProfileForm.color) updateData.color = editProfileForm.color;
@@ -711,294 +724,6 @@
             }
         }
 
-        // --- RENDERERS ---
-
-        function render() {
-            const app = document.getElementById('app');
-            app.innerHTML = '';
-            
-            if (currentUser) {
-                renderChatRoom(app);
-                renderThemeModal(); 
-                renderProfileModal();
-            } else {
-                renderLogin(app);
-            }
-            if(window.lucide) window.lucide.createIcons();
-        }
-
-        function renderLogin(container) {
-            container.innerHTML = `
-                <div class="flex h-full min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 p-4">
-                    <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-                        <div class="mb-6 flex flex-col items-center text-center">
-                            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                                <i data-lucide="message-circle" class="w-6 h-6"></i>
-                            </div>
-                            <h1 class="mb-1 text-2xl font-bold text-gray-900">SimpleConnect</h1>
-                            <p class="text-xs text-gray-500">Live, Real-time Chat.</p>
-                        </div>
-                        <form id="loginForm" class="space-y-4">
-                            <div class="space-y-1">
-                                <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Display Name</label>
-                                <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
-                                <p id="loginError" class="text-xs text-red-500 hidden"></p>
-                            </div>
-                            <button id="loginBtn" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">
-                                Join Chat
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('loginForm').addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const usernameInput = document.getElementById('username');
-                const btn = document.getElementById('loginBtn');
-                const err = document.getElementById('loginError');
-                
-                const username = usernameInput.value.trim();
-                if (!username || username.length < 2) {
-                    err.textContent = 'Name too short';
-                    err.classList.remove('hidden');
-                    return;
-                }
-                
-                btn.disabled = true;
-                err.classList.add('hidden');
-
-                try {
-                    const usernameLower = username.toLowerCase();
-                    const q = query(collection(db, "users"), where("usernameLower", "==", usernameLower));
-                    const snapshot = await getDocs(q);
-                    
-                    if (!snapshot.empty) {
-                        err.textContent = 'Username taken.';
-                        err.classList.remove('hidden');
-                        btn.disabled = false;
-                        return;
-                    }
-
-                    const userId = crypto.randomUUID();
-                    const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-                    const role = 'vip'; 
-                    const roleConfig = getRoleConfig(role);
-
-                    const user = {
-                        id: userId,
-                        username,
-                        usernameLower,
-                        color,
-                        role,
-                        banner: roleConfig.gradient,
-                        joinedAt: Date.now()
-                    };
-                    
-                    currentUser = user;
-                    localStorage.setItem('chat_user', JSON.stringify(user));
-                    
-                    await setDoc(doc(db, "users", userId), {
-                        username,
-                        usernameLower,
-                        color,
-                        role,
-                        banner: roleConfig.gradient,
-                        lastSeen: serverTimestamp(),
-                        joinedAt: serverTimestamp()
-                    });
-
-                    init();
-                } catch (error) {
-                    console.error("Login error:", error);
-                    err.textContent = 'Error connecting to server.';
-                    err.classList.remove('hidden');
-                    btn.disabled = false;
-                }
-            });
-        }
-
-        function renderChatRoom(container) {
-            container.innerHTML = `
-                <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row text-sm">
-                    <!-- LEFT Sidebar -->
-                    <div id="sidebar" class="theme-bg-sidebar fixed inset-y-0 left-0 z-30 w-56 transform shadow-xl transition-transform duration-300 ease-in-out md:static md:translate-x-0 -translate-x-full border-r flex flex-col shrink-0">
-                        <div class="border-b theme-border-primary p-4">
-                            <h2 class="text-xl font-bold theme-text-primary">SimpleConnect</h2>
-                            <p class="text-xs opacity-60">Global Room</p>
-                        </div>
-                        <div id="sidebarContent" class="flex-1 overflow-y-auto p-3 space-y-4"></div>
-                        <div class="p-3 border-t theme-border-primary">
-                            <button id="logoutBtn" class="flex w-full items-center justify-center rounded-lg border border-red-200 bg-red-50/10 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50/20 transition-colors">
-                                <i data-lucide="log-out" class="mr-2 w-3 h-3"></i> Sign Out
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div id="overlay" class="fixed inset-0 z-20 bg-black bg-opacity-50 md:hidden hidden"></div>
-
-                    <!-- Main Chat -->
-                    <div class="flex flex-1 flex-col overflow-hidden relative h-full">
-                        <div class="flex items-center justify-between border-b theme-bg-sidebar p-3 shadow-sm md:hidden shrink-0">
-                            <h1 class="text-lg font-bold theme-text-primary">SimpleConnect</h1>
-                            <button id="menuBtn" class="p-2 opacity-70 hover:opacity-100">
-                                <i data-lucide="menu" class="w-5 h-5"></i>
-                            </button>
-                        </div>
-
-                        <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"></div>
-                        <div id="typingIndicator" class="px-4 py-1.5 min-h-[1.5rem] text-[10px] opacity-60 italic flex items-center shrink-0"></div>
-
-                        <!-- Input Area with Mention Dropdown -->
-                        <div class="theme-bg-sidebar p-3 border-t theme-border-primary shrink-0 relative">
-                            <div id="mentionDropdown" class="absolute bottom-full left-3 mb-1 bg-white border border-gray-200 rounded-lg shadow-xl w-48 hidden overflow-hidden z-50"></div>
-
-                            <form id="messageForm" class="mx-auto max-w-4xl relative">
-                                <input id="messageInput" type="text" 
-                                    placeholder="Message... (@ to mention)" 
-                                    class="w-full rounded-full border px-4 py-2 pr-20 theme-input focus:outline-none focus:ring-1 focus:ring-opacity-50 theme-border-primary text-sm shadow-sm" 
-                                    autocomplete="off" 
-                                    style="--tw-ring-color: var(--primary);">
-                                
-                                <div class="absolute right-1.5 top-1 flex space-x-1">
-                                    <button type="button" id="uploadImgBtn" class="p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors" title="Upload Image">
-                                        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                    <button type="submit" id="sendBtn" class="rounded-full theme-primary p-1.5 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
-                                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <!-- RIGHT Sidebar -->
-                    <div id="rightSidebar" class="hidden lg:flex w-60 flex-col border-l theme-bg-sidebar theme-border-primary shrink-0">
-                         <div class="p-4 border-b theme-border-primary">
-                            <h3 class="text-xs font-bold uppercase tracking-wider opacity-70">Online Users</h3>
-                         </div>
-                         <div id="onlineUsersList" class="flex-1 overflow-y-auto p-2"></div>
-                    </div>
-                    
-                    <div id="themeModalContainer"></div>
-                    <div id="profileModalContainer"></div>
-                </div>
-            `;
-
-            renderSidebar();
-            renderRightSidebar();
-
-            const menuBtn = document.getElementById('menuBtn');
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('overlay');
-            const toggleSidebar = () => {
-                sidebar.classList.toggle('-translate-x-full');
-                sidebar.classList.toggle('translate-x-0');
-                overlay.classList.toggle('hidden');
-            };
-            if (menuBtn) menuBtn.addEventListener('click', toggleSidebar);
-            if (overlay) overlay.addEventListener('click', toggleSidebar);
-
-            document.getElementById('logoutBtn').addEventListener('click', () => {
-                localStorage.removeItem('chat_user');
-                location.reload();
-            });
-
-            const messageForm = document.getElementById('messageForm');
-            const messageInput = document.getElementById('messageInput');
-
-            messageInput.addEventListener('input', (e) => {
-                const val = e.target.value;
-                
-                // Typing Indicator logic
-                if (val.trim()) {
-                    const now = Date.now();
-                    if (now - lastTypingSent > 2500) {
-                        setDoc(doc(db, "typing", currentUser.id), {
-                            userId: currentUser.id,
-                            username: currentUser.username,
-                            timestamp: serverTimestamp()
-                        });
-                        lastTypingSent = now;
-                    }
-                }
-                
-                // Mention Logic
-                const lastAt = val.lastIndexOf('@');
-                if (lastAt !== -1) {
-                    const query = val.substring(lastAt + 1);
-                    // Check if there's a space after @, if so, stop suggesting
-                    if (!query.includes(' ')) {
-                        mentionQuery = query.toLowerCase();
-                        mentionIndex = lastAt + 1;
-                        renderMentionDropdown();
-                    } else {
-                        mentionQuery = null;
-                        renderMentionDropdown();
-                    }
-                } else {
-                    mentionQuery = null;
-                    renderMentionDropdown();
-                }
-            });
-
-            messageForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const text = messageInput.value.trim();
-                if (!text && !pendingChatImage) return;
-                
-                messageInput.value = '';
-                mentionQuery = null;
-                renderMentionDropdown();
-                
-                const imgToSend = pendingChatImage;
-                pendingChatImage = null;
-                document.getElementById('uploadImgBtn').classList.remove('text-green-600', 'bg-green-100');
-
-                try {
-                    await addDoc(collection(db, "messages"), {
-                        text: text,
-                        image: imgToSend,
-                        senderId: currentUser.id,
-                        senderName: currentUser.username,
-                        senderColor: currentUser.color,
-                        timestamp: serverTimestamp(),
-                        edited: false
-                    });
-                } catch (err) {
-                    console.error("Error sending", err);
-                }
-            });
-            
-            renderChatMessages();
-        }
-
-        function renderMentionDropdown() {
-            const dropdown = document.getElementById('mentionDropdown');
-            if (!dropdown) return;
-
-            if (!mentionQuery && mentionQuery !== '') {
-                dropdown.classList.add('hidden');
-                return;
-            }
-
-            const matches = onlineUsers.filter(u => u.username.toLowerCase().startsWith(mentionQuery));
-            if (matches.length === 0) {
-                dropdown.classList.add('hidden');
-                return;
-            }
-
-            dropdown.innerHTML = matches.map(u => `
-                <div class="mention-item flex items-center p-2 hover:bg-gray-100 cursor-pointer" data-username="${u.username}">
-                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold mr-2 ${u.color}">
-                        ${u.username.substring(0,2).toUpperCase()}
-                     </div>
-                     <span class="text-sm font-medium text-gray-800">${u.username}</span>
-                </div>
-            `).join('');
-            dropdown.classList.remove('hidden');
-        }
-
         function renderSidebar() {
             const container = document.getElementById('sidebarContent');
             if (!container) return;
@@ -1007,17 +732,22 @@
             const avatarHtml = currentUser.avatarImage 
                 ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">` 
                 : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
+            
+            // Check if active user has status in online list (or from currentUser object if up to date)
+            // But currentUser object might be stale if we relied on snapshots for it. 
+            // Better to rely on currentUser local var which we update on save.
+            const statusHtml = currentUser.status 
+                ? `<p class="text-[10px] text-gray-500 truncate max-w-[140px]">"${escapeHtml(currentUser.status)}"</p>` 
+                : `<div class="flex items-center text-[10px] text-green-500"><span class="mr-1 h-1 w-1 rounded-full bg-green-500"></span> Online</div>`;
 
             container.innerHTML = `
                 <div>
                     <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">My Profile</h3>
                     <div class="user-profile-trigger flex items-center space-x-3 rounded-lg bg-gray-100/10 p-2 border border-gray-200/20 cursor-pointer hover:bg-gray-100/20 transition-colors" data-user-id="${currentUser.id}">
                         ${avatarHtml}
-                        <div>
-                            <p class="font-semibold text-xs">${safeUsername}</p>
-                            <div class="flex items-center text-[10px] text-green-500">
-                                <span class="mr-1 h-1 w-1 rounded-full bg-green-500"></span> Online
-                            </div>
+                        <div class="overflow-hidden">
+                            <p class="font-semibold text-xs truncate">${safeUsername}</p>
+                            ${statusHtml}
                         </div>
                     </div>
                 </div>
@@ -1052,6 +782,10 @@
                 const avatarHtml = u.avatarImage 
                     ? `<img src="${u.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">`
                     : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'} text-xs">${escapeHtml(u.username).substring(0, 2).toUpperCase()}</div>`;
+                
+                const statusDisplay = u.status 
+                    ? `<p class="text-[10px] text-gray-500 truncate">"${escapeHtml(u.status)}"</p>`
+                    : `<div class="flex items-center mt-0.5"><span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold ${role.bg} ${role.color} ${role.border} border uppercase tracking-wide"><i data-lucide="${role.icon}" class="w-2.5 h-2.5 mr-0.5 ${role.fill} ${role.color}"></i> ${role.label}</span></div>`;
 
                 return `
                 <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
@@ -1059,80 +793,17 @@
                       ${avatarHtml}
                       <div class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-white ring-1 ring-gray-100"></div>
                    </div>
-                   <div class="ml-2.5 min-w-0 flex-1">
+                   <div class="ml-2.5 min-w-0 flex-1 overflow-hidden">
                       <div class="flex items-center justify-between">
                           <p class="text-xs font-semibold truncate ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
-                              ${escapeHtml(u.username)} ${u.id === currentUser.id ? '(You)' : ''}
+                              ${escapeHtml(u.username)}
                           </p>
                       </div>
-                      <div class="flex items-center mt-0.5">
-                        <span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold ${role.bg} ${role.color} ${role.border} border uppercase tracking-wide">
-                            <i data-lucide="${role.icon}" class="w-2.5 h-2.5 mr-0.5 ${role.fill} ${role.color}"></i> ${role.label}
-                        </span>
-                      </div>
+                      ${statusDisplay}
                    </div>
                 </div>
             `}).join('');
             
-            if(window.lucide) window.lucide.createIcons();
-        }
-
-        function renderThemeModal() {
-            const container = document.getElementById('themeModalContainer');
-            if (!container) return;
-
-            if (!showThemeModal) { container.innerHTML = ''; return; }
-
-            const t = themes.find(x => x.id === previewThemeId) || themes[0];
-            const previewStyle = `
-                --primary: ${t.primary};
-                --bg-app: ${t.bgApp};
-                --bg-sidebar: ${t.bgSidebar};
-                --text-main: ${t.text};
-                --msg-bubble-me: ${t.primary};
-                --msg-text-me: #ffffff;
-                --border-color: ${t.borderColor};
-            `;
-
-            container.innerHTML = `
-                <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm">
-                    <div class="w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
-                        <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
-                            <div><h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2><p class="text-xs text-gray-500">Preview before you apply</p></div>
-                            <div class="flex items-center space-x-2">
-                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Apply Theme</button>
-                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-gray-600"></i></button>
-                            </div>
-                        </div>
-                        <div class="flex flex-1 overflow-hidden">
-                            <div class="w-1/3 border-r bg-gray-100 hidden md:flex flex-col p-4 overflow-hidden relative">
-                                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Live Preview</h3>
-                                <div class="flex-1 rounded-xl shadow-lg flex flex-col overflow-hidden border theme-scope relative" style="${previewStyle}">
-                                    <div class="h-10 border-b theme-bg-sidebar flex items-center px-3 space-x-2 shrink-0">
-                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div><div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
-                                    </div>
-                                    <div class="flex-1 p-3 space-y-3 overflow-hidden theme-bg-app relative">
-                                        <div class="flex items-end"><div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div><div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]"><p class="theme-text-main opacity-90">How does this look?</p></div></div>
-                                        <div class="flex flex-row-reverse items-end"><div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white"><p>Looks awesome! 😎</p></div></div>
-                                    </div>
-                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0"><div class="h-full rounded-full border opacity-50 mx-auto w-full"></div></div>
-                                </div>
-                                <div class="mt-4 text-center"><span class="text-sm font-bold text-gray-700">${t.name}</span></div>
-                            </div>
-                            <div class="flex-1 overflow-y-auto p-4 bg-white">
-                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                    ${themes.map(th => `
-                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" data-id="${th.id}">
-                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}"><div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div><div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div></div>
-                                            <span class="text-[10px] font-semibold text-gray-600 group-hover:text-gray-900 text-center">${th.name}</span>
-                                        </button>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
             if(window.lucide) window.lucide.createIcons();
         }
 
@@ -1162,16 +833,12 @@
             container.innerHTML = `
                 <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
                      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-visible transform transition-all scale-100 relative">
-                        <!-- Close Button -->
                         <button id="closeProfileBtn" class="absolute top-4 right-4 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-full text-white transition-colors">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
 
-                        <!-- Banner -->
                         <div id="${isEditingProfile ? 'editBannerTrigger' : ''}" class="rounded-t-3xl ${bannerClass} ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}" style="${bannerStyle}">
                              ${isEditingProfile ? '<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-3xl"><i data-lucide="image" class="text-white w-8 h-8 drop-shadow-lg"></i></div>' : ''}
-                             
-                             <!-- Avatar -->
                              <div class="absolute left-1/2 -translate-x-1/2 -bottom-12">
                                 <div id="${isEditingProfile ? 'editAvatarTrigger' : ''}" class="h-24 w-24 rounded-full border-[4px] border-white shadow-lg overflow-hidden flex items-center justify-center text-3xl font-bold text-white bg-white relative ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}">
                                     ${avatarImage 
@@ -1184,17 +851,19 @@
                         </div>
                         
                         <div class="px-6 pb-6 pt-16 relative text-center">
-                            <!-- Music Player Bar (Only if viewing profile and musicUrl exists) -->
-                            ${(!isEditingProfile && data.musicUrl) ? `
-                                <div class="mb-6 mx-auto w-full max-w-[90%] bg-gray-900 rounded-xl p-2.5 flex items-center justify-between shadow-lg ring-1 ring-gray-800">
+                            <!-- Hidden YouTube Player Container -->
+                            <div id="hidden-player" class="hidden"></div>
+                        
+                            ${(!isEditingProfile && data.youtubeId) ? `
+                                <div class="mb-4 mx-auto w-full max-w-[90%] bg-gray-900 rounded-xl p-2.5 flex items-center justify-between shadow-lg ring-1 ring-gray-800">
                                     <div class="flex items-center space-x-3">
-                                        <div class="h-8 w-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-inner">
-                                            <i data-lucide="music" class="text-white w-4 h-4"></i>
+                                        <div class="h-8 w-8 rounded-lg bg-red-600 flex items-center justify-center shadow-inner">
+                                            <i data-lucide="youtube" class="text-white w-4 h-4"></i>
                                         </div>
                                         <div class="text-left">
                                             <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Profile Anthem</p>
                                             <p class="text-xs font-bold text-white flex items-center space-x-1">
-                                                <span>Playing Music</span>
+                                                <span>YouTube Music</span>
                                                 ${isMusicPlaying ? `
                                                     <span class="flex space-x-0.5 items-end h-3">
                                                         <span class="w-0.5 bg-green-400 eq-bar"></span>
@@ -1221,24 +890,29 @@
                                 ${isEditingProfile ? `
                                     <div class="space-y-4 text-left">
                                         <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
-                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Current Display Name</label>
-                                            <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm font-bold text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none transition-all" autocomplete="off" placeholder="Enter username...">
-                                            <p id="editProfileError" class="text-red-500 text-xs mt-1 font-semibold hidden"></p>
+                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Display Name</label>
+                                            <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm font-bold text-gray-900 outline-none" autocomplete="off" placeholder="Enter username...">
+                                        </div>
+                                        
+                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Status</label>
+                                            <input id="editStatusInput" type="text" value="${escapeHtml(editProfileForm.status)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="What's on your mind?">
                                         </div>
 
-                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 flex items-center justify-between">
-                                            <div>
-                                                <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-0.5">Profile Anthem</label>
-                                                <p class="text-[10px] text-gray-400">${editProfileForm.musicUrl ? 'Music file loaded' : 'Upload custom music (>5MB supported)'}</p>
+                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Profile Anthem (YouTube)</label>
+                                            <div class="flex items-center space-x-2">
+                                                <i data-lucide="youtube" class="w-4 h-4 text-red-600"></i>
+                                                <input id="editYoutubeInput" type="text" value="${escapeHtml(editProfileForm.youtubeId)}" class="flex-1 bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="Paste YouTube Link or ID">
                                             </div>
-                                            <button id="uploadMusicBtn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded shadow-sm flex items-center">
-                                                <i data-lucide="upload-cloud" class="w-3 h-3 mr-1.5"></i> <span id="uploadMusicBtnLabel">Upload Music</span>
-                                            </button>
+                                            <p class="text-[9px] text-gray-400 mt-1">Plays automatically when people visit your profile.</p>
                                         </div>
+                                        <p id="editProfileError" class="text-red-500 text-xs font-semibold hidden"></p>
                                     </div>
                                 ` : `
-                                    <div class="flex items-center justify-center space-x-2">
+                                    <div class="flex flex-col items-center justify-center space-y-1">
                                         <h2 class="text-2xl font-black text-gray-900 leading-tight">${escapeHtml(username)}</h2>
+                                        ${data.status ? `<div class="bg-gray-100 px-3 py-1 rounded-full text-xs text-gray-600 italic">"${escapeHtml(data.status)}"</div>` : ''}
                                     </div>
                                 `}
 
@@ -1280,13 +954,6 @@
                 catch (e) { cleanHtml = escapeHtml(msg.text || ''); } 
             } else { cleanHtml = escapeHtml(msg.text || ''); }
             
-            // Process Mentions
-            // Regex to find @Username not preceded by alphanumerics
-            // We iterate onlineUsers to find valid mentions. 
-            // A smarter way for render-time is to replace all @Word with span if Word matches a user.
-            // But doing regex replace for each user is expensive.
-            // Simplified: Highlight any @Word. If @MyUsername, style differently.
-            
             cleanHtml = cleanHtml.replace(/(@\w+)/g, (match) => {
                 const mentionedName = match.substring(1).toLowerCase();
                 const isMeMentioned = mentionedName === currentUser.username.toLowerCase();
@@ -1302,7 +969,6 @@
                 imageHtml = `<img src="${msg.image}" class="chat-image" alt="attachment" onclick="window.open(this.src, '_blank')">`;
             }
 
-            // Avatar check
             let avatarSrc = null;
             if(msg.senderId === currentUser.id) avatarSrc = currentUser.avatarImage;
             else {
@@ -1315,19 +981,50 @@
                 : `<div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">${safeName.substring(0, 2).toUpperCase()}</div>`;
             
             const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
-
-            // Mentioned Me Container Style
             const isMentionedContainer = msg.text.toLowerCase().includes(`@${currentUser.username.toLowerCase()}`);
             const containerStyle = isMentionedContainer ? 'ring-2 ring-yellow-300 bg-yellow-50/10' : '';
+
+            // Reactions Rendering
+            let reactionsHtml = '';
+            if (msg.reactions) {
+                const pills = [];
+                for (const [emoji, users] of Object.entries(msg.reactions)) {
+                    if (users && users.length > 0) {
+                        const isActive = users.includes(currentUser.id);
+                        pills.push(`
+                            <button class="reaction-pill reaction-btn-trigger ${isActive ? 'active' : ''}" data-id="${msg.id}" data-emoji="${emoji}">
+                                ${emoji} <span class="ml-1 opacity-70 font-semibold">${users.length}</span>
+                            </button>
+                        `);
+                    }
+                }
+                if (pills.length > 0) {
+                    reactionsHtml = `<div class="flex flex-wrap mt-1.5 -ml-1">${pills.join('')}</div>`;
+                }
+            }
+
+            // Reaction Menu in Actions
+            const reactionMenuHtml = REACTIONS_LIST.map(e => `
+                <button class="reaction-btn-trigger p-1 hover:scale-125 transition-transform" data-id="${msg.id}" data-emoji="${e}">${e}</button>
+            `).join('');
 
             return `
                 <div class="flex max-w-[90%] md:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
                     ${avatarHtml}
-                    ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}"><button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button><button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div>` : ''}
+                    ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex items-center space-x-1 z-10 ${isMe ? '-left-auto right-full pr-2' : '-right-auto left-full pl-2'}">
+                        <div class="flex bg-white border border-gray-200 rounded-full shadow-sm px-1 py-0.5 mr-2 space-x-0.5">${reactionMenuHtml}</div>
+                        <button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button>
+                        <button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                    </div>` 
+                    : `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex items-center space-x-1 z-10 -right-auto left-full pl-2">
+                        <div class="flex bg-white border border-gray-200 rounded-full shadow-sm px-1 py-0.5 space-x-0.5">${reactionMenuHtml}</div>
+                    </div>`}
+                    
                     <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px] ${containerStyle}">
                         ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
                         ${imageHtml}
                         <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
+                        ${reactionsHtml}
                         <div class="flex items-center justify-end mt-0.5 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-0.5">
                             ${msg.edited ? '<span class="text-[8px] italic">(edited)</span>' : ''}
                             <span class="text-[9px]">${time}</span>
