@@ -70,11 +70,8 @@
         .markdown-content blockquote { border-left: 2px solid rgba(0,0,0,0.2); padding-left: 0.4em; margin-left: 0.2em; opacity: 0.8; }
         .markdown-content a { text-decoration: underline; }
 
-        /* Dynamic Theme Classes - Scoped for Live Preview support */
-        .theme-scope {
-            background-color: var(--bg-app);
-            color: var(--text-main);
-        }
+        /* Dynamic Theme Classes */
+        .theme-scope { background-color: var(--bg-app); color: var(--text-main); }
         .theme-bg-app { background-color: var(--bg-app); color: var(--text-main); }
         .theme-bg-sidebar { background-color: var(--bg-sidebar); border-color: var(--border-color); }
         .theme-text-main { color: var(--text-main); }
@@ -123,6 +120,8 @@
         let showProfileModal = false;
         let viewingProfileId = null;
         let viewingProfileData = null;
+        let isEditingProfile = false; // New state for profile editing
+        let editProfileForm = { username: '', color: '', banner: '' }; // Temp state for editing
 
         let currentThemeId = 0;
         let themes = [];
@@ -135,22 +134,30 @@
             'bg-pink-500', 'bg-rose-500', 'bg-slate-600', 'bg-stone-500'
         ];
 
-        // --- THEME DEFINITIONS ---
+        const BANNER_GRADIENTS = [
+            'from-blue-600 to-indigo-800',
+            'from-purple-500 to-pink-500',
+            'from-green-400 to-blue-500',
+            'from-yellow-400 to-orange-500',
+            'from-red-500 to-rose-600',
+            'from-gray-700 to-gray-900',
+            'from-indigo-400 to-cyan-400',
+            'from-fuchsia-500 to-purple-600'
+        ];
+
+        // --- THEME GENERATOR ---
         function generateThemes() {
-            // Helper to build theme object
             const t = (id, name, prim, bgApp, bgSide, txt, bord = 'rgba(0,0,0,0.08)', bgInp = '#f9fafb') => ({
                 id, name, primary: prim, primaryHover: prim, bgApp, bgSidebar: bgSide, text: txt, borderColor: bord, bgInput: bgInp
             });
 
+            // Compact list of themes (Same as before)
             const list = [
-                // Basics
                 t(0, 'Standard Blue', '#2563eb', '#f3f4f6', '#ffffff', '#111827'),
                 t(1, 'Dark Mode', '#3b82f6', '#0f172a', '#1e293b', '#f8fafc', '#334155', '#334155'),
                 t(2, 'Midnight', '#6366f1', '#111827', '#1f2937', '#f3f4f6', '#374151', '#374151'),
                 t(3, 'Forest', '#059669', '#ecfdf5', '#ffffff', '#064e3b'),
                 t(4, 'Deep Forest', '#10b981', '#064e3b', '#065f46', '#ecfdf5', '#047857', '#064e3b'),
-                
-                // Characters / Pop Culture
                 t(5, 'Spiderman', '#dc2626', '#1e3a8a', '#172554', '#f0f9ff', '#1e40af', '#1d4ed8'),
                 t(6, 'Hulk', '#65a30d', '#4c1d95', '#5b21b6', '#f7fee7', '#7c3aed', '#6d28d9'),
                 t(7, 'Iron Man', '#eab308', '#7f1d1d', '#991b1b', '#fefce8', '#b91c1c', '#7f1d1d'),
@@ -161,8 +168,6 @@
                 t(12, 'Dracula', '#e11d48', '#0f172a', '#1e293b', '#ffe4e6', '#334155', '#334155'),
                 t(13, 'Bumblebee', '#facc15', '#18181b', '#27272a', '#fefce8', '#3f3f46', '#27272a'),
                 t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
-
-                // Aesthetics
                 t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
                 t(16, 'Vaporwave', '#d8b4fe', '#fdf4ff', '#fae8ff', '#581c87'),
                 t(17, 'Sunset', '#f97316', '#fff7ed', '#fffaf0', '#7c2d12'),
@@ -213,10 +218,8 @@
             root.style.setProperty('--text-main', theme.text);
             root.style.setProperty('--bg-input', theme.bgInput || '#f9fafb');
             root.style.setProperty('--border-color', theme.borderColor || 'rgba(0,0,0,0.08)');
-            
-            // Adjust message bubble contrast
             root.style.setProperty('--msg-bubble-me', theme.primary);
-            root.style.setProperty('--msg-text-me', '#ffffff'); // Simplified white text for me-bubbles
+            root.style.setProperty('--msg-text-me', '#ffffff');
 
             currentThemeId = theme.id;
             localStorage.setItem('chat_theme_id', theme.id);
@@ -225,12 +228,9 @@
         // --- UTILS ---
         function escapeHtml(text) {
             if (!text) return '';
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
+            return text.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
         }
 
         function formatDate(timestamp) {
@@ -239,28 +239,28 @@
             return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
         }
 
-        // Returns role config based on username
-        function getUserRole(username) {
-            if (!username) return { label: 'VIP', icon: 'crown', color: 'text-yellow-600', fill: 'fill-yellow-500', bg: 'bg-yellow-100', border: 'border-yellow-200' };
-            
-            if (username.toLowerCase() === 'developer') {
+        // Returns role config based on stored role field
+        function getRoleConfig(role) {
+            if (role === 'developer') {
                 return { 
                     label: 'Developer', 
                     icon: 'code-2', 
                     color: 'text-blue-600', 
                     fill: 'fill-blue-500', 
                     bg: 'bg-blue-100', 
-                    border: 'border-blue-200' 
+                    border: 'border-blue-200',
+                    gradient: 'from-blue-600 to-indigo-800'
                 };
             }
-            
+            // Default VIP
             return { 
                 label: 'VIP', 
                 icon: 'crown', 
                 color: 'text-yellow-600', 
                 fill: 'fill-yellow-500', 
                 bg: 'bg-yellow-100', 
-                border: 'border-yellow-200' 
+                border: 'border-yellow-200',
+                gradient: 'from-yellow-400 to-orange-500'
             };
         }
 
@@ -268,14 +268,12 @@
         function init() {
             themes = generateThemes();
             
-            // Restore User
             const storedUser = localStorage.getItem('chat_user');
             if (storedUser) {
                 try { currentUser = JSON.parse(storedUser); } 
                 catch (e) { localStorage.removeItem('chat_user'); }
             }
 
-            // Restore Theme
             const storedTheme = localStorage.getItem('chat_theme_id');
             const initTheme = storedTheme ? parseInt(storedTheme) : 0;
             applyTheme(initTheme);
@@ -285,30 +283,52 @@
             
             if (currentUser) {
                 setupFirestoreListeners();
-                updatePresence();
-                // Send heartbeat every 60 seconds
-                setInterval(updatePresence, 60000);
+                updatePresenceAndMigration(); // Updated to handle migration
+                setInterval(updatePresenceAndMigration, 60000);
             }
 
             document.addEventListener('click', handleGlobalClicks);
         }
 
-        async function updatePresence() {
+        async function updatePresenceAndMigration() {
             if (!currentUser) return;
             try {
-                await setDoc(doc(db, "users", currentUser.id), {
-                    username: currentUser.username,
-                    usernameLower: currentUser.username.toLowerCase(),
-                    color: currentUser.color,
-                    lastSeen: serverTimestamp(),
-                }, { merge: true });
+                // Migration Logic: If no role exists, assign based on OLD logic.
+                // If username was 'Developer' (legacy), they get the role.
+                // New users are handled in Signup, defaulting to 'vip'.
+                const updates = {
+                    lastSeen: serverTimestamp()
+                };
+
+                // One-time migration for legacy local user object
+                if (!currentUser.role) {
+                    if (currentUser.username.toLowerCase() === 'developer') {
+                        currentUser.role = 'developer';
+                        updates.role = 'developer';
+                    } else {
+                        currentUser.role = 'vip';
+                        updates.role = 'vip';
+                    }
+                    localStorage.setItem('chat_user', JSON.stringify(currentUser));
+                }
+                
+                // Ensure local banner is set if missing
+                if (!currentUser.banner) {
+                     const roleConfig = getRoleConfig(currentUser.role);
+                     currentUser.banner = roleConfig.gradient;
+                     updates.banner = roleConfig.gradient;
+                     localStorage.setItem('chat_user', JSON.stringify(currentUser));
+                }
+                
+                // Sync to DB
+                await setDoc(doc(db, "users", currentUser.id), updates, { merge: true });
+
             } catch (e) {
                 console.error("Presence update failed", e);
             }
         }
 
         function setupFirestoreListeners() {
-            // Messages Listener
             const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(100));
             onSnapshot(q, (snapshot) => {
                 messages = snapshot.docs.map(doc => ({
@@ -319,12 +339,10 @@
                 renderChatMessages();
             });
 
-            // Online Users
             const usersQ = query(collection(db, "users"));
             onSnapshot(usersQ, (snapshot) => {
                 const now = Date.now();
-                const cutoff = now - (2 * 60 * 1000); // 2 mins
-                
+                const cutoff = now - (2 * 60 * 1000); 
                 const active = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
@@ -336,7 +354,6 @@
                 renderRightSidebar();
             });
 
-            // Typing
             const typingQ = query(collection(db, "typing"));
             onSnapshot(typingQ, (snapshot) => {
                 const now = Date.now();
@@ -357,15 +374,58 @@
         async function handleGlobalClicks(e) {
             const target = e.target;
             
-            // User Profile Click
+            // Profile Modal Close
+            if (target.closest('#closeProfileBtn') || target.closest('#profileOverlay') === target) {
+                showProfileModal = false;
+                renderProfileModal();
+                return;
+            }
+
+            // Open Profile
             const userTrigger = target.closest('.user-profile-trigger');
             if (userTrigger) {
                 e.preventDefault();
-                const userId = userTrigger.dataset.userId;
-                if (userId) {
-                    await openProfileModal(userId);
-                }
+                await openProfileModal(userTrigger.dataset.userId);
                 return;
+            }
+            
+            // Toggle Edit Profile
+            if (target.closest('#editProfileBtn')) {
+                isEditingProfile = true;
+                // Init edit form with current viewing data (which must be current user)
+                editProfileForm = { 
+                    username: viewingProfileData.username, 
+                    color: viewingProfileData.color, 
+                    banner: viewingProfileData.banner || getRoleConfig(viewingProfileData.role).gradient 
+                };
+                renderProfileModal();
+            }
+
+            // Cancel Edit Profile
+            if (target.closest('#cancelEditProfileBtn')) {
+                isEditingProfile = false;
+                renderProfileModal();
+            }
+
+            // Cycle Avatar (Edit Mode)
+            if (target.closest('#editAvatarTrigger')) {
+                const currIdx = AVATAR_COLORS.indexOf(editProfileForm.color);
+                const nextIdx = (currIdx + 1) % AVATAR_COLORS.length;
+                editProfileForm.color = AVATAR_COLORS[nextIdx];
+                renderProfileModal();
+            }
+
+            // Cycle Banner (Edit Mode)
+            if (target.closest('#editBannerTrigger')) {
+                const currIdx = BANNER_GRADIENTS.indexOf(editProfileForm.banner);
+                const nextIdx = (currIdx + 1) % BANNER_GRADIENTS.length;
+                editProfileForm.banner = BANNER_GRADIENTS[nextIdx];
+                renderProfileModal();
+            }
+
+            // Save Profile
+            if (target.closest('#saveProfileBtn')) {
+                await saveProfile();
             }
 
             // Message Actions
@@ -391,54 +451,86 @@
                 return;
             }
 
-            // Theme Modal Actions
-            if (target.closest('#themeBtn')) {
-                showThemeModal = true;
-                previewThemeId = currentThemeId; // Reset preview to current
-                renderThemeModal();
-            }
-            if (target.closest('#closeThemeBtn') || target.closest('#themeOverlay') === target) {
-                showThemeModal = false;
-                renderThemeModal();
-            }
-            if (target.closest('#applyThemeBtn')) {
-                applyTheme(previewThemeId);
-                showThemeModal = false;
-                renderThemeModal();
-            }
-            
-            // Preview Theme Selection
+            // Theme Modal
+            if (target.closest('#themeBtn')) { showThemeModal = true; previewThemeId = currentThemeId; renderThemeModal(); }
+            if (target.closest('#closeThemeBtn') || target.closest('#themeOverlay') === target) { showThemeModal = false; renderThemeModal(); }
+            if (target.closest('#applyThemeBtn')) { applyTheme(previewThemeId); showThemeModal = false; renderThemeModal(); }
             const themeOption = target.closest('.theme-option');
-            if (themeOption) {
-                previewThemeId = Number(themeOption.dataset.id);
-                renderThemeModal(); // Re-render to show update in preview box
-            }
-
-            // Profile Modal Actions
-            if (target.closest('#closeProfileBtn') || target.closest('#profileOverlay') === target) {
-                showProfileModal = false;
-                renderProfileModal();
-            }
+            if (themeOption) { previewThemeId = Number(themeOption.dataset.id); renderThemeModal(); }
         }
 
         async function openProfileModal(userId) {
             viewingProfileId = userId;
             showProfileModal = true;
-            viewingProfileData = null; // Loading state
+            isEditingProfile = false;
+            viewingProfileData = null;
             renderProfileModal();
 
             try {
                 const docSnap = await getDoc(doc(db, "users", userId));
                 if (docSnap.exists()) {
                     viewingProfileData = docSnap.data();
+                    // Fallback for missing role/banner
+                    if (!viewingProfileData.role) viewingProfileData.role = 'vip';
+                    if (!viewingProfileData.banner) viewingProfileData.banner = getRoleConfig(viewingProfileData.role).gradient;
                 } else {
-                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500' }; // Fallback
+                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500', role: 'vip', banner: BANNER_GRADIENTS[0] };
                 }
             } catch (e) {
                 console.error("Error fetching profile", e);
-                viewingProfileData = { username: 'Error', color: 'bg-red-500' };
+                viewingProfileData = { username: 'Error', color: 'bg-red-500', role: 'vip', banner: BANNER_GRADIENTS[0] };
             }
             renderProfileModal();
+        }
+
+        async function saveProfile() {
+            const newName = document.getElementById('editUsernameInput').value.trim();
+            const errorEl = document.getElementById('editProfileError');
+            
+            if (!newName || newName.length < 2) {
+                errorEl.textContent = "Username too short.";
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            // Check uniqueness only if changed
+            if (newName.toLowerCase() !== currentUser.username.toLowerCase()) {
+                const q = query(collection(db, "users"), where("usernameLower", "==", newName.toLowerCase()));
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    errorEl.textContent = "Username taken.";
+                    errorEl.classList.remove('hidden');
+                    return;
+                }
+            }
+
+            try {
+                // Update DB
+                await updateDoc(doc(db, "users", currentUser.id), {
+                    username: newName,
+                    usernameLower: newName.toLowerCase(),
+                    color: editProfileForm.color,
+                    banner: editProfileForm.banner
+                });
+
+                // Update Local State
+                currentUser.username = newName;
+                currentUser.usernameLower = newName.toLowerCase();
+                currentUser.color = editProfileForm.color;
+                currentUser.banner = editProfileForm.banner;
+                localStorage.setItem('chat_user', JSON.stringify(currentUser));
+                
+                // Refresh View
+                viewingProfileData = { ...viewingProfileData, ...editProfileForm, username: newName };
+                isEditingProfile = false;
+                renderProfileModal();
+                renderSidebar(); // Update mini profile
+
+            } catch(e) {
+                console.error(e);
+                errorEl.textContent = "Failed to save.";
+                errorEl.classList.remove('hidden');
+            }
         }
 
         // --- RENDERERS ---
@@ -489,25 +581,22 @@
                 const err = document.getElementById('loginError');
                 
                 const username = usernameInput.value.trim();
-
                 if (!username || username.length < 2) {
                     err.textContent = 'Name too short';
                     err.classList.remove('hidden');
                     return;
                 }
                 
-                // Disable button
                 btn.disabled = true;
                 err.classList.add('hidden');
 
-                // Check for unique username
                 try {
                     const usernameLower = username.toLowerCase();
                     const q = query(collection(db, "users"), where("usernameLower", "==", usernameLower));
                     const snapshot = await getDocs(q);
                     
                     if (!snapshot.empty) {
-                        err.textContent = 'Username already taken. Please choose another.';
+                        err.textContent = 'Username taken.';
                         err.classList.remove('hidden');
                         btn.disabled = false;
                         return;
@@ -515,22 +604,29 @@
 
                     const userId = crypto.randomUUID();
                     const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+                    // New users default to VIP unless manually changed in DB
+                    const role = 'vip'; 
+                    const roleConfig = getRoleConfig(role);
+
                     const user = {
                         id: userId,
                         username,
-                        usernameLower, // Save lower case for future checks
+                        usernameLower,
                         color,
+                        role,
+                        banner: roleConfig.gradient,
                         joinedAt: Date.now()
                     };
                     
                     currentUser = user;
                     localStorage.setItem('chat_user', JSON.stringify(user));
                     
-                    // Initial DB Save
                     await setDoc(doc(db, "users", userId), {
                         username,
                         usernameLower,
                         color,
+                        role,
+                        banner: roleConfig.gradient,
                         lastSeen: serverTimestamp(),
                         joinedAt: serverTimestamp()
                     });
@@ -538,7 +634,7 @@
                     init();
                 } catch (error) {
                     console.error("Login error:", error);
-                    err.textContent = 'Error connecting to server. Try again.';
+                    err.textContent = 'Error connecting to server.';
                     err.classList.remove('hidden');
                     btn.disabled = false;
                 }
@@ -714,7 +810,7 @@
             }
 
             container.innerHTML = onlineUsers.map(u => {
-                const role = getUserRole(u.username);
+                const role = getRoleConfig(u.role);
                 return `
                 <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
                    <div class="relative shrink-0">
@@ -745,15 +841,9 @@
             const container = document.getElementById('themeModalContainer');
             if (!container) return;
 
-            if (!showThemeModal) {
-                container.innerHTML = '';
-                return;
-            }
+            if (!showThemeModal) { container.innerHTML = ''; return; }
 
-            // Get preview theme object
             const t = themes.find(x => x.id === previewThemeId) || themes[0];
-            
-            // Generate styles for preview box
             const previewStyle = `
                 --primary: ${t.primary};
                 --bg-app: ${t.bgApp};
@@ -767,72 +857,33 @@
             container.innerHTML = `
                 <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm">
                     <div class="w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
-                        
-                        <!-- Header -->
                         <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
-                            <div>
-                                <h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2>
-                                <p class="text-xs text-gray-500">Preview before you apply</p>
-                            </div>
+                            <div><h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2><p class="text-xs text-gray-500">Preview before you apply</p></div>
                             <div class="flex items-center space-x-2">
-                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">
-                                    Apply Theme
-                                </button>
-                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors">
-                                    <i data-lucide="x" class="w-5 h-5 text-gray-600"></i>
-                                </button>
+                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Apply Theme</button>
+                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-gray-600"></i></button>
                             </div>
                         </div>
-
                         <div class="flex flex-1 overflow-hidden">
-                            <!-- Live Preview Panel (Left) -->
                             <div class="w-1/3 border-r bg-gray-100 hidden md:flex flex-col p-4 overflow-hidden relative">
                                 <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Live Preview</h3>
-                                
-                                <!-- Mock Window -->
                                 <div class="flex-1 rounded-xl shadow-lg flex flex-col overflow-hidden border theme-scope relative" style="${previewStyle}">
-                                    <!-- Mock Header -->
                                     <div class="h-10 border-b theme-bg-sidebar flex items-center px-3 space-x-2 shrink-0">
-                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
-                                        <div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div>
-                                        <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div><div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
                                     </div>
-                                    <!-- Mock Body -->
                                     <div class="flex-1 p-3 space-y-3 overflow-hidden theme-bg-app relative">
-                                        <div class="flex items-end">
-                                            <div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div>
-                                            <div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]">
-                                                <p class="theme-text-main opacity-90">How does this look?</p>
-                                            </div>
-                                        </div>
-                                        <div class="flex flex-row-reverse items-end">
-                                             <div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white">
-                                                <p>Looks awesome! 😎</p>
-                                            </div>
-                                        </div>
+                                        <div class="flex items-end"><div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div><div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]"><p class="theme-text-main opacity-90">How does this look?</p></div></div>
+                                        <div class="flex flex-row-reverse items-end"><div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white"><p>Looks awesome! 😎</p></div></div>
                                     </div>
-                                    <!-- Mock Input -->
-                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0">
-                                        <div class="h-full rounded-full border opacity-50 mx-auto w-full"></div>
-                                    </div>
+                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0"><div class="h-full rounded-full border opacity-50 mx-auto w-full"></div></div>
                                 </div>
-                                
-                                <div class="mt-4 text-center">
-                                    <span class="text-sm font-bold text-gray-700">${t.name}</span>
-                                </div>
+                                <div class="mt-4 text-center"><span class="text-sm font-bold text-gray-700">${t.name}</span></div>
                             </div>
-
-                            <!-- Theme Grid (Right) -->
                             <div class="flex-1 overflow-y-auto p-4 bg-white">
                                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                     ${themes.map(th => `
-                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" 
-                                                data-id="${th.id}">
-                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}">
-                                                <div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div>
-                                                <div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div>
-                                                <div class="absolute left-1/3 top-2 w-12 h-3 rounded bg-black/5"></div>
-                                            </div>
+                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" data-id="${th.id}">
+                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}"><div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div><div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div></div>
                                             <span class="text-[10px] font-semibold text-gray-600 group-hover:text-gray-900 text-center">${th.name}</span>
                                         </button>
                                     `).join('')}
@@ -849,52 +900,84 @@
             const container = document.getElementById('profileModalContainer');
             if (!container) return;
 
-            if (!showProfileModal) {
-                container.innerHTML = '';
-                return;
-            }
+            if (!showProfileModal) { container.innerHTML = ''; return; }
 
-            const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200' };
+            const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip' };
+            const role = getRoleConfig(data.role);
+            const banner = isEditingProfile ? editProfileForm.banner : (data.banner || role.gradient);
+            const color = isEditingProfile ? editProfileForm.color : data.color;
+            const username = isEditingProfile ? editProfileForm.username : data.username;
+            
             const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
             const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
             
-            const role = getUserRole(data.username);
+            const isMe = currentUser && currentUser.id === viewingProfileId;
 
+            // Updated Layout
             container.innerHTML = `
-                <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100">
+                <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-100 relative">
+                        <!-- Close Button -->
+                        <button id="closeProfileBtn" class="absolute top-4 right-4 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-full text-white transition-colors">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+
                         <!-- Banner -->
-                        <div class="h-32 bg-gradient-to-r ${role.label === 'Developer' ? 'from-blue-600 to-indigo-800' : 'from-yellow-400 to-orange-500'} relative">
-                             <button id="closeProfileBtn" class="absolute top-3 right-3 p-1.5 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors">
-                                <i data-lucide="x" class="w-5 h-5"></i>
-                            </button>
+                        <div id="${isEditingProfile ? 'editBannerTrigger' : ''}" class="h-36 bg-gradient-to-r ${banner} relative ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}">
+                             ${isEditingProfile ? '<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="pencil" class="text-white w-6 h-6"></i></div>' : ''}
                         </div>
                         
-                        <div class="px-8 pb-8 relative">
+                        <div class="px-6 pb-6 relative">
                             <!-- Avatar -->
-                            <div class="absolute -top-12 left-1/2 transform -translate-x-1/2">
-                                <div class="h-24 w-24 rounded-full border-[6px] border-white shadow-lg flex items-center justify-center text-3xl font-bold text-white ${data.color}">
-                                    ${escapeHtml(data.username).substring(0,2).toUpperCase()}
+                            <div class="absolute -top-12 left-6">
+                                <div id="${isEditingProfile ? 'editAvatarTrigger' : ''}" class="h-24 w-24 rounded-full border-[6px] border-white shadow-lg flex items-center justify-center text-3xl font-bold text-white ${color} relative ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}">
+                                    ${escapeHtml(username).substring(0,2).toUpperCase()}
+                                    ${isEditingProfile ? '<div class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="refresh-ccw" class="text-white w-5 h-5"></i></div>' : ''}
                                 </div>
                             </div>
                             
-                            <div class="mt-14 text-center">
-                                <h2 class="text-2xl font-bold text-gray-900 mb-2">${escapeHtml(data.username)}</h2>
-                                
-                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${role.bg} ${role.color} border ${role.border} uppercase tracking-wide">
-                                    <i data-lucide="${role.icon}" class="w-3.5 h-3.5 mr-1 ${role.fill}"></i> ${role.label}
-                                </span>
-                                
-                                <div class="mt-8 grid grid-cols-2 gap-4 border-t pt-6">
-                                    <div class="flex flex-col items-center">
-                                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Joined</span>
-                                        <span class="text-sm font-medium text-gray-700 mt-1">${joinDate}</span>
+                            <!-- Action Button -->
+                            ${isMe && !isEditingProfile ? `
+                                <button id="editProfileBtn" class="absolute top-4 right-6 px-4 py-1.5 rounded-full border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+                                    Edit Profile
+                                </button>
+                            ` : ''}
+
+                            <div class="mt-14">
+                                <!-- Name & Role -->
+                                ${isEditingProfile ? `
+                                    <div class="mb-2">
+                                        <label class="text-[10px] font-bold text-gray-500 uppercase">Username</label>
+                                        <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full mt-1 border rounded p-2 text-sm font-bold focus:border-blue-500 outline-none" autocomplete="off">
+                                        <p id="editProfileError" class="text-red-500 text-xs mt-1 hidden"></p>
                                     </div>
-                                    <div class="flex flex-col items-center">
-                                        <span class="text-xs uppercase tracking-wider text-gray-400 font-semibold">Last Seen</span>
-                                        <span class="text-sm font-medium text-gray-700 mt-1 text-center leading-tight">${lastSeen}</span>
-                                    </div>
+                                ` : `
+                                    <h2 class="text-2xl font-black text-gray-900 leading-tight">${escapeHtml(username)}</h2>
+                                `}
+                                
+                                <div class="mt-2 flex items-center space-x-2">
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${role.bg} ${role.color} border ${role.border} uppercase tracking-wide">
+                                        <i data-lucide="${role.icon}" class="w-3.5 h-3.5 mr-1 ${role.fill}"></i> ${role.label}
+                                    </span>
                                 </div>
+                                
+                                ${isEditingProfile ? `
+                                    <div class="mt-6 flex space-x-2">
+                                        <button id="saveProfileBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm font-bold">Save</button>
+                                        <button id="cancelEditProfileBtn" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-bold">Cancel</button>
+                                    </div>
+                                ` : `
+                                    <div class="mt-6 grid grid-cols-2 gap-4 border-t pt-4">
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Joined</span>
+                                            <span class="text-sm font-semibold text-gray-700">${joinDate}</span>
+                                        </div>
+                                        <div class="flex flex-col">
+                                            <span class="text-[10px] uppercase tracking-wider text-gray-400 font-bold">Last Seen</span>
+                                            <span class="text-sm font-semibold text-gray-700">${lastSeen}</span>
+                                        </div>
+                                    </div>
+                                `}
                             </div>
                         </div>
                      </div>
@@ -908,15 +991,7 @@
             if (!list) return;
             
             if (messages.length === 0) {
-                list.innerHTML = `
-                    <div class="flex h-full flex-col items-center justify-center text-center opacity-40">
-                        <div class="mb-4 rounded-full bg-gray-200 p-4">
-                            <i data-lucide="message-square-dashed" class="w-8 h-8"></i>
-                        </div>
-                        <h3 class="text-base font-medium">No messages</h3>
-                        <p class="text-xs">Say hello!</p>
-                    </div>
-                `;
+                list.innerHTML = `<div class="flex h-full flex-col items-center justify-center text-center opacity-40"><div class="mb-4 rounded-full bg-gray-200 p-4"><i data-lucide="message-square-dashed" class="w-8 h-8"></i></div><h3 class="text-base font-medium">No messages</h3><p class="text-xs">Say hello!</p></div>`;
             } else {
                 list.innerHTML = messages.map(msg => {
                     const isMe = msg.senderId === currentUser.id;
@@ -924,28 +999,11 @@
                     const time = isNaN(date.getTime()) ? '...' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     const isEditing = editingMessageId === msg.id;
                     const safeName = escapeHtml(msg.senderName);
-                    
                     let cleanHtml = '';
-                    if (window.marked && window.DOMPurify) {
-                         try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text)); } 
-                         catch (e) { cleanHtml = escapeHtml(msg.text); }
-                    } else { cleanHtml = escapeHtml(msg.text); }
+                    if (window.marked && window.DOMPurify) { try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text)); } catch (e) { cleanHtml = escapeHtml(msg.text); } } else { cleanHtml = escapeHtml(msg.text); }
 
                     if (isEditing) {
-                        return `
-                        <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3">
-                            <div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start">
-                                <div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10">
-                                    <textarea 
-                                        class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" 
-                                        rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea>
-                                    <div class="flex justify-end space-x-1">
-                                        <button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
-                                        <button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
+                        return `<div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3"><div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start"><div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10"><textarea class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea><div class="flex justify-end space-x-1"><button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button><button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button></div></div></div></div>`;
                     }
 
                     return `
@@ -954,18 +1012,7 @@
                                 <div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">
                                     ${safeName.substring(0, 2).toUpperCase()}
                                 </div>
-                                
-                                ${isMe ? `
-                                    <div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}">
-                                        <button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}">
-                                            <i data-lucide="pencil" class="w-3 h-3"></i>
-                                        </button>
-                                        <button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}">
-                                            <i data-lucide="trash-2" class="w-3 h-3"></i>
-                                        </button>
-                                    </div>
-                                ` : ''}
-
+                                ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}"><button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button><button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div>` : ''}
                                 <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px]">
                                     ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
                                     <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
@@ -981,11 +1028,8 @@
             }
             if(window.lucide) window.lucide.createIcons();
             
-            if (!editingMessageId && list.scrollTop + list.clientHeight >= list.scrollHeight - 150) {
-                 setTimeout(() => list.scrollTop = list.scrollHeight, 50);
-            } else if (messages.length > 0 && list.scrollTop === 0) {
-                 setTimeout(() => list.scrollTop = list.scrollHeight, 100);
-            }
+            if (!editingMessageId && list.scrollTop + list.clientHeight >= list.scrollHeight - 150) { setTimeout(() => list.scrollTop = list.scrollHeight, 50); } 
+            else if (messages.length > 0 && list.scrollTop === 0) { setTimeout(() => list.scrollTop = list.scrollHeight, 100); }
         }
 
         function updateTypingUI() {
