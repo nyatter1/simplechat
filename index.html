@@ -116,12 +116,19 @@
         .inbox-chat-active { background-color: var(--bg-app); border-left: 3px solid var(--primary); }
         .dm-bubble-me { background-color: var(--msg-bubble-me); color: var(--msg-text-me); border-radius: 12px 12px 0 12px; }
         .dm-bubble-other { background-color: var(--bg-sidebar); border: 1px solid var(--border-color); border-radius: 12px 12px 12px 0; }
+
+        /* Toast Notifications */
+        @keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-10px); } }
+        .toast-item { animation: toast-in 0.3s ease-out forwards; }
+        .toast-item.hiding { animation: toast-out 0.3s ease-in forwards; }
     </style>
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body class="theme-bg-app font-sans antialiased h-screen overflow-hidden text-sm">
     <div id="app" class="h-full w-full"></div>
+    <div id="toastContainer" class="fixed top-4 left-4 z-[70] flex flex-col space-y-2 pointer-events-none"></div>
 
     <!-- Hidden File Inputs -->
     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden">
@@ -284,6 +291,19 @@
                 audio.play().catch(e => console.log("Audio play failed (interaction required)"));
             } catch(e) {}
         }
+        
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toastContainer');
+            if(!container) return;
+            const el = document.createElement('div');
+            el.className = `toast-item max-w-xs px-4 py-2 rounded-lg shadow-lg text-xs font-bold flex items-center mb-2 ${type === 'error' ? 'bg-red-500 text-white' : 'bg-gray-800 text-white'}`;
+            el.innerText = message;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.classList.add('hiding');
+                el.addEventListener('animationend', () => el.remove());
+            }, 3000);
+        }
 
         function compressImage(file, maxWidth, quality = 0.7) {
             return new Promise((resolve, reject) => {
@@ -322,33 +342,49 @@
         }
 
         function getRoleConfig(role) {
-            if (role === 'developer') {
-                return { 
-                    label: 'Developer', 
-                    icon: 'code-2', 
-                    color: 'text-blue-600', 
-                    fill: 'fill-blue-500', 
-                    bg: 'bg-blue-100', 
-                    border: 'border-blue-200',
-                    gradient: 'from-blue-600 to-indigo-800'
-                };
+            const r = (role || '').toLowerCase();
+            switch(r) {
+                // High Staff
+                case 'developer': return { label: 'Developer', icon: 'code-2', color: 'text-blue-600', fill: 'fill-blue-500', bg: 'bg-blue-100', border: 'border-blue-200', gradient: 'from-blue-600 to-cyan-500' };
+                case 'founder': return { label: 'Founder', icon: 'flag', color: 'text-indigo-600', fill: 'fill-indigo-500', bg: 'bg-indigo-100', border: 'border-indigo-200', gradient: 'from-indigo-600 to-purple-600' };
+                case 'head owner': return { label: 'Head Owner', icon: 'key', color: 'text-red-800', fill: 'fill-red-700', bg: 'bg-red-200', border: 'border-red-300', gradient: 'from-red-800 to-rose-900' };
+                case 'owner': return { label: 'Owner', icon: 'key', color: 'text-orange-700', fill: 'fill-orange-600', bg: 'bg-orange-100', border: 'border-orange-200', gradient: 'from-orange-600 to-red-600' };
+                case 'ceo': return { label: 'CEO', icon: 'briefcase', color: 'text-slate-800', fill: 'fill-slate-700', bg: 'bg-slate-200', border: 'border-slate-300', gradient: 'from-slate-800 to-gray-900' };
+                case 'manager': return { label: 'Manager', icon: 'clipboard-list', color: 'text-slate-600', fill: 'fill-slate-500', bg: 'bg-slate-100', border: 'border-slate-200', gradient: 'from-slate-600 to-gray-600' };
+                
+                // Staff
+                case 'super admin': return { label: 'Super Admin', icon: 'shield-check', color: 'text-red-600', fill: 'fill-red-500', bg: 'bg-red-100', border: 'border-red-200', gradient: 'from-red-600 to-pink-600' };
+                case 'admin': return { label: 'Admin', icon: 'shield-alert', color: 'text-red-500', fill: 'fill-red-400', bg: 'bg-red-50', border: 'border-red-200', gradient: 'from-red-500 to-orange-500' };
+                case 'moderator': return { label: 'Moderator', icon: 'shield', color: 'text-green-600', fill: 'fill-green-500', bg: 'bg-green-100', border: 'border-green-200', gradient: 'from-green-500 to-teal-500' };
+                case 'site helper': return { label: 'Site Helper', icon: 'help-circle', color: 'text-teal-600', fill: 'fill-teal-500', bg: 'bg-teal-100', border: 'border-teal-200', gradient: 'from-teal-500 to-emerald-500' };
+                
+                // Fun / Special
+                case 'king': return { label: 'King', icon: 'crown', color: 'text-yellow-600', fill: 'fill-yellow-500', bg: 'bg-yellow-100', border: 'border-yellow-200', gradient: 'from-yellow-400 to-amber-600' };
+                case 'princess': return { label: 'Princess', icon: 'heart', color: 'text-pink-500', fill: 'fill-pink-400', bg: 'bg-pink-100', border: 'border-pink-200', gradient: 'from-pink-400 to-rose-400' };
+                case 'butterfly': return { label: 'Butterfly', icon: 'feather', color: 'text-fuchsia-500', fill: 'fill-fuchsia-400', bg: 'bg-fuchsia-100', border: 'border-fuchsia-200', gradient: 'from-fuchsia-400 to-purple-400' };
+                case 'legend': return { label: 'Legend', icon: 'trophy', color: 'text-amber-500', fill: 'fill-amber-400', bg: 'bg-amber-50', border: 'border-amber-200', gradient: 'from-amber-400 to-yellow-400' };
+                case 'verified member': return { label: 'Verified', icon: 'check-circle', color: 'text-blue-500', fill: 'fill-blue-400', bg: 'bg-blue-50', border: 'border-blue-200', gradient: 'from-blue-400 to-cyan-400' };
+                case 'premium': return { label: 'Premium', icon: 'diamond', color: 'text-purple-600', fill: 'fill-purple-500', bg: 'bg-purple-100', border: 'border-purple-200', gradient: 'from-purple-500 to-indigo-500' };
+                case 'ghost': return { label: 'Ghost', icon: 'ghost', color: 'text-gray-500', fill: 'fill-gray-400', bg: 'bg-gray-100', border: 'border-gray-200', gradient: 'from-gray-400 to-slate-400' };
+                case 'teddy': return { label: 'Teddy', icon: 'smile', color: 'text-orange-800', fill: 'fill-orange-400', bg: 'bg-orange-100', border: 'border-orange-200', gradient: 'from-orange-700 to-amber-700' };
+                case 'special vip': return { label: 'Special VIP', icon: 'star', color: 'text-orange-500', fill: 'fill-orange-400', bg: 'bg-orange-50', border: 'border-orange-200', gradient: 'from-orange-400 to-red-400' };
+                case 'vip': return { label: 'VIP', icon: 'crown', color: 'text-yellow-600', fill: 'fill-yellow-500', bg: 'bg-yellow-50', border: 'border-yellow-200', gradient: 'from-yellow-300 to-orange-300' };
+                
+                // Default
+                default: return { label: 'Member', icon: 'user', color: 'text-gray-600', fill: 'fill-gray-400', bg: 'bg-gray-100', border: 'border-gray-200', gradient: 'from-gray-400 to-gray-500' };
             }
-            return { 
-                label: 'VIP', 
-                icon: 'crown', 
-                color: 'text-yellow-600', 
-                fill: 'fill-yellow-500', 
-                bg: 'bg-yellow-100', 
-                border: 'border-yellow-200',
-                gradient: 'from-yellow-400 to-orange-500'
-            };
         }
         
         function getRolePriority(role) {
             const r = (role || '').toLowerCase();
-            if (r === 'developer') return 100;
-            if (r === 'admin') return 50;
-            if (r === 'vip') return 10;
+            const ranks = [
+                'developer', 'founder', 'head owner', 'owner', 'ceo', 'manager',
+                'super admin', 'admin', 'moderator', 'site helper',
+                'king', 'princess', 'legend', 'premium', 'special vip', 'vip', 
+                'verified member', 'butterfly', 'teddy', 'ghost'
+            ];
+            const idx = ranks.indexOf(r);
+            if(idx !== -1) return 100 - idx;
             return 0;
         }
 
@@ -404,7 +440,6 @@
 
             document.addEventListener('click', handleGlobalClicks);
             
-            // ... existing listeners ...
             const avatarInput = document.getElementById('avatarUploadInput');
             if(avatarInput) avatarInput.addEventListener('change', async (e) => {
                 if (e.target.files && e.target.files[0]) {
@@ -441,8 +476,7 @@
 
             const dmImgInput = document.getElementById('dmImageInput');
             if(dmImgInput) dmImgInput.addEventListener('change', async (e) => {
-                 // Simple DM image handling, directly send for now or store state?
-                 // Let's repurpose pendingChatImage for DMs if activeChatId is set, or make a new state
+                 // Simple DM image handling
                  if (e.target.files && e.target.files[0]) {
                     try {
                         const base64 = await compressImage(e.target.files[0], 400);
@@ -807,8 +841,6 @@
              }
              
              // Firestore doesn't support generic substring search nicely without 3rd party.
-             // For simple app, we can query users by prefix or just filter onlineUsers + some heuristic
-             // Let's do a prefix search on usernameLower
              try {
                  const q = query(collection(db, "users"), where("usernameLower", ">=", dmSearchQuery), where("usernameLower", "<=", dmSearchQuery + '\uf8ff'), limit(5));
                  const snap = await getDocs(q);
@@ -935,8 +967,7 @@
                         const cred = await createUserWithEmailAndPassword(auth, email, pass);
                         const userId = cred.user.uid;
 
-                        // Initial Role Logic: If username is 'developerr', assign dev role.
-                        // This persists in DB even if username changes later.
+                        // Initial Role Logic
                         let role = 'vip';
                         if (username.toLowerCase() === 'developerr') role = 'developer';
                         const roleConfig = getRoleConfig(role);
@@ -1114,6 +1145,64 @@
             messageForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const text = messageInput.value.trim();
+                
+                // Handle Commands
+                if (text.startsWith('/')) {
+                     messageInput.value = '';
+                     mentionQuery = null;
+                     renderMentionDropdown();
+                     
+                     const args = text.slice(1).trim().split(' ');
+                     const command = args[0].toLowerCase();
+                     const highStaff = ['developer', 'founder', 'head owner'];
+                     const userRole = (currentUser.role || '').toLowerCase();
+                     
+                     if (command === 'clear') {
+                        if (!highStaff.includes(userRole)) {
+                            showToast("Permission denied.", 'error');
+                            return;
+                        }
+                        try {
+                            // Simple client-side loop delete (Firestore Limitation: no collection delete from web client directly)
+                            const snap = await getDocs(collection(db, "messages"));
+                            snap.forEach(d => deleteDoc(d.ref));
+                            showToast("Action complete");
+                        } catch(err) { console.error(err); showToast("Error clearing chat", 'error'); }
+                        return;
+                     }
+                     
+                     if (command === 'rank') {
+                        if (!highStaff.includes(userRole)) {
+                            showToast("Permission denied.", 'error');
+                            return;
+                        }
+                        const targetName = args[1];
+                        const newRankStr = args.slice(2).join(' '); // Ranks can have spaces
+                        
+                        if (!targetName || !newRankStr) {
+                            showToast("Usage: /rank {username} {RankName}", 'error');
+                            return;
+                        }
+                        
+                        try {
+                            const q = query(collection(db, "users"), where("usernameLower", "==", targetName.toLowerCase()));
+                            const snap = await getDocs(q);
+                            if (snap.empty) {
+                                showToast("User not found.", 'error');
+                                return;
+                            }
+                            const targetUser = snap.docs[0];
+                            // Update user
+                            await updateDoc(doc(db, "users", targetUser.id), { role: newRankStr.toLowerCase() });
+                            showToast("Action complete");
+                        } catch(err) { console.error(err); showToast("Error updating rank", 'error'); }
+                        return;
+                     }
+                     
+                     showToast("Invalid command", 'error');
+                     return;
+                }
+
                 if (!text && !pendingChatImage) return;
                 
                 messageInput.value = '';
@@ -1168,6 +1257,7 @@
             dropdown.classList.remove('hidden');
         }
 
+        // ... existing renderSidebar, renderRightSidebar, renderThemeModal, renderProfileModal ...
         function renderSidebar() {
             const container = document.getElementById('sidebarContent');
             if (!container) return;
