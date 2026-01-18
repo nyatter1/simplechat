@@ -121,6 +121,10 @@
         
         /* Notification Dot */
         .notif-dot { position: absolute; top: 0; right: 0; transform: translate(25%, -25%); width: 0.75rem; height: 0.75rem; background-color: #ef4444; border-radius: 9999px; border: 2px solid white; }
+
+        /* Wallet Animation */
+        .wallet-enter { animation: wallet-slide 0.2s ease-out forwards; transform-origin: top; }
+        @keyframes wallet-slide { from { opacity: 0; transform: scaleY(0.8); } to { opacity: 1; transform: scaleY(1); } }
     </style>
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -133,6 +137,7 @@
     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden">
     <input type="file" id="bannerUploadInput" accept="image/png, image/jpeg, image/gif, image/webp" class="hidden">
     <input type="file" id="chatImageInput" accept="image/*" class="hidden">
+    <input type="file" id="newsImageInput" accept="image/*" class="hidden">
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -163,10 +168,15 @@
         let typingUsers = {}; 
         let onlineUsers = [];
         let notifications = [];
+        let newsPosts = [];
         let editingMessageId = null; 
         let lastTypingSent = 0;
         let pendingChatImage = null;
         let showNotifications = false;
+        let showWallet = false;
+        let showNewsModal = false;
+        let isCreatingNews = false;
+        let pendingNewsImage = null;
         
         // Mentions State
         let mentionQuery = null;
@@ -270,55 +280,7 @@
                 t(13, 'Bumblebee', '#facc15', '#18181b', '#27272a', '#fefce8', '#3f3f46', '#27272a'),
                 t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
                 t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
-                t(16, 'Rose Gold', '#e11d48', '#fff1f2', '#ffe4e6', '#881337'),
-                t(17, 'Ocean Breeze', '#06b6d4', '#ecfeff', '#cffafe', '#155e75'),
-                t(18, 'Sunset', '#f97316', '#fff7ed', '#ffedd5', '#9a3412'),
-                t(19, 'Lavender', '#8b5cf6', '#f5f3ff', '#ede9fe', '#5b21b6'),
-                t(20, 'Slate Dark', '#94a3b8', '#1e293b', '#334155', '#e2e8f0'),
-                t(21, 'Mint', '#34d399', '#ecfdf5', '#d1fae5', '#065f46'),
-                t(22, 'Peach', '#fb923c', '#fff7ed', '#ffedd5', '#9a3412'),
-                t(23, 'Coffee', '#78350f', '#fffbeb', '#fef3c7', '#451a03'),
-                t(24, 'Sky High', '#0ea5e9', '#f0f9ff', '#e0f2fe', '#075985'),
-                t(25, 'Royal', '#4f46e5', '#eef2ff', '#e0e7ff', '#312e81'),
-                t(26, 'Lemon', '#facc15', '#fefce8', '#fef9c3', '#854d0e'),
-                t(27, 'Ruby', '#dc2626', '#fef2f2', '#fee2e2', '#991b1b'),
-                t(28, 'Void', '#71717a', '#000000', '#09090b', '#d4d4d8'),
-                t(29, 'Neon Green', '#39ff14', '#111111', '#222222', '#39ff14'),
-                t(30, 'Hackerman', '#00ff00', '#0d0d0d', '#1a1a1a', '#00ff00'),
-                t(31, 'Pastel Pink', '#f9a8d4', '#fdf2f8', '#fce7f3', '#831843'),
-                t(32, 'Pastel Blue', '#93c5fd', '#eff6ff', '#dbeafe', '#1e3a8a'),
-                t(33, 'Pastel Purple', '#c4b5fd', '#f5f3ff', '#ede9fe', '#4c1d95'),
-                t(34, 'Monochrome', '#525252', '#ffffff', '#e5e5e5', '#171717'),
-                t(35, 'Sepia', '#b45309', '#fff7ed', '#ffedd5', '#78350f'),
-                t(36, 'Aqua', '#22d3ee', '#ecfeff', '#cffafe', '#164e63'),
-                t(37, 'Hot Pink', '#db2777', '#fdf2f8', '#fce7f3', '#831843'),
-                t(38, 'Lime', '#84cc16', '#f7fee7', '#ecfccb', '#365314'),
-                t(39, 'Emerald City', '#10b981', '#022c22', '#064e3b', '#d1fae5'),
-                t(40, 'Night Sky', '#6366f1', '#1e1b4b', '#312e81', '#e0e7ff'),
-                t(41, 'Cherry', '#be123c', '#fff1f2', '#ffe4e6', '#881337'),
-                t(42, 'Teal Dark', '#14b8a6', '#134e4a', '#115e59', '#ccfbf1'),
-                t(43, 'Orange Dark', '#f97316', '#431407', '#7c2d12', '#ffedd5'),
-                t(44, 'Indigo Dark', '#6366f1', '#312e81', '#3730a3', '#e0e7ff'),
-                t(45, 'Violet Dark', '#8b5cf6', '#4c1d95', '#5b21b6', '#ede9fe'),
-                t(46, 'Fuchsia Dark', '#d946ef', '#701a75', '#86198f', '#fae8ff'),
-                t(47, 'Rose Dark', '#f43f5e', '#881337', '#9f1239', '#ffe4e6'),
-                t(48, 'Slate Light', '#475569', '#f1f5f9', '#e2e8f0', '#0f172a'),
-                t(49, 'Zinc Light', '#52525b', '#f4f4f5', '#e4e4e7', '#18181b'),
-                t(50, 'Neutral Light', '#525252', '#f5f5f5', '#e5e5e5', '#171717'),
-                t(51, 'Stone Light', '#57534e', '#fafaf9', '#e7e5e4', '#1c1917'),
-                t(52, 'Red Light', '#dc2626', '#fef2f2', '#fee2e2', '#7f1d1d'),
-                t(53, 'Orange Light', '#ea580c', '#fff7ed', '#ffedd5', '#7c2d12'),
-                t(54, 'Amber Light', '#d97706', '#fffbeb', '#fef3c7', '#78350f'),
-                t(55, 'Yellow Light', '#ca8a04', '#fefce8', '#fef9c3', '#713f12'),
-                t(56, 'Lime Light', '#65a30d', '#f7fee7', '#ecfccb', '#3f6212'),
-                t(57, 'Green Light', '#16a34a', '#f0fdf4', '#dcfce7', '#14532d'),
-                t(58, 'Emerald Light', '#059669', '#ecfdf5', '#d1fae5', '#064e3b'),
-                t(59, 'Teal Light', '#0d9488', '#f0fdfa', '#ccfbf1', '#134e4a'),
-                t(60, 'Cyan Light', '#0891b2', '#ecfeff', '#cffafe', '#155e75'),
-                t(61, 'Sky Light', '#0284c7', '#f0f9ff', '#e0f2fe', '#0c4a6e'),
-                t(62, 'Blue Light', '#2563eb', '#eff6ff', '#dbeafe', '#1e3a8a'),
-                t(63, 'Indigo Light', '#4f46e5', '#eef2ff', '#e0e7ff', '#312e81'),
-                t(64, 'Violet Light', '#7c3aed', '#f5f3ff', '#ede9fe', '#5b21b6')
+                t(16, 'Rose Gold', '#e11d48', '#e11d48', '#fff1f2', '#ffe4e6', '#881337')
             ];
             return list;
         }
@@ -490,8 +452,10 @@
                         const userDoc = await getDoc(doc(db, "users", user.uid));
                         if (userDoc.exists()) {
                             currentUser = { id: user.uid, ...userDoc.data() };
-                            // Fallback if role is missing
+                            // Default values for new/missing fields
                             if (!currentUser.role) currentUser.role = 'vip';
+                            if (currentUser.coins === undefined) currentUser.coins = 1000;
+                            if (currentUser.gems === undefined) currentUser.gems = 10;
                             
                             // Start Listeners
                             render();
@@ -548,6 +512,22 @@
                     } catch(err) { alert(err.message); }
                 }
             });
+            
+            const newsImgInput = document.getElementById('newsImageInput');
+            if(newsImgInput) newsImgInput.addEventListener('change', async (e) => {
+                 if (e.target.files && e.target.files[0]) {
+                    try {
+                        const base64 = await compressImage(e.target.files[0], 600); 
+                        pendingNewsImage = base64;
+                        const btn = document.getElementById('newsUploadBtn');
+                        if(btn) {
+                            btn.classList.add('text-green-600', 'bg-green-100');
+                            btn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> Image Ready`;
+                            if(window.lucide) window.lucide.createIcons();
+                        }
+                    } catch(err) { alert(err.message); }
+                }
+            });
         }
         
         async function ensureBotExists() {
@@ -582,6 +562,7 @@
         }
 
         function setupFirestoreListeners() {
+            // Chat
             const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(50));
             onSnapshot(q, (snapshot) => {
                 const changes = snapshot.docChanges();
@@ -608,6 +589,7 @@
                 renderChatMessages();
             });
 
+            // Users & Wallet (Listening to self)
             const usersQ = query(collection(db, "users"));
             onSnapshot(usersQ, (snapshot) => {
                 const now = Date.now();
@@ -615,22 +597,33 @@
                 const active = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    // Consider online if seen recently OR if it is the Bot
+                    if(doc.id === currentUser.id) {
+                         // Update local wallet info
+                         currentUser.coins = data.coins || 1000;
+                         currentUser.gems = data.gems || 10;
+                         renderSidebar(); // Update Wallet Display
+                    }
                     if ((data.lastSeen && data.lastSeen.toMillis() > cutoff) || doc.id === 'simple_bot_uid') {
                         active.push({ id: doc.id, ...data });
                     }
                 });
                 
-                // Sort by Rank Hierarchy then Alphabetical
                 onlineUsers = active.sort((a,b) => {
                     const pA = getRolePriority(a.role);
                     const pB = getRolePriority(b.role);
-                    if (pA !== pB) return pB - pA; // Higher priority first
+                    if (pA !== pB) return pB - pA;
                     return a.username.localeCompare(b.username);
                 });
                 
                 renderRightSidebar();
-                renderSidebar(); // Update My Status in sidebar
+                renderChatRoom(); // Update Header Profile
+            });
+            
+            // News Listener
+            const newsQ = query(collection(db, "news"), orderBy("timestamp", "desc"), limit(20));
+            onSnapshot(newsQ, (snapshot) => {
+                newsPosts = snapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
+                if(showNewsModal) renderNewsModal();
             });
 
             const typingQ = query(collection(db, "typing"));
@@ -764,6 +757,58 @@
             if (target.closest('#saveProfileBtn')) {
                 await saveProfile();
             }
+            
+            // --- Wallet & News Triggers ---
+            if (target.closest('#walletBtn')) {
+                showWallet = !showWallet;
+                renderSidebar();
+                return;
+            }
+            
+            if (target.closest('#openNewsBtn')) {
+                showNewsModal = true;
+                isCreatingNews = false;
+                renderNewsModal();
+                return;
+            }
+            
+            if (target.closest('#closeNewsBtn') || (showNewsModal && target.id === 'newsOverlay')) {
+                showNewsModal = false;
+                renderNewsModal();
+                return;
+            }
+            
+            if (target.closest('#addNewsBtn')) {
+                isCreatingNews = !isCreatingNews;
+                renderNewsModal();
+                return;
+            }
+            
+            if (target.closest('#newsUploadBtn')) {
+                document.getElementById('newsImageInput').click();
+                return;
+            }
+            
+            if (target.closest('#submitNewsBtn')) {
+                await submitNews();
+                return;
+            }
+            
+            if (target.closest('.news-like-btn')) {
+                const id = target.closest('.news-like-btn').dataset.id;
+                await toggleNewsLike(id);
+                return;
+            }
+            
+            if (target.closest('.news-comment-btn')) {
+                const id = target.closest('.news-comment-btn').dataset.id;
+                const input = document.querySelector(`.news-comment-input[data-id="${id}"]`);
+                if(input && input.value.trim()) {
+                    await postNewsComment(id, input.value.trim());
+                    input.value = '';
+                }
+                return;
+            }
 
             // ... Edit/Delete Message ...
             const editBtn = target.closest('.btn-start-edit');
@@ -824,6 +869,55 @@
                 showNotifications = false;
                 document.getElementById('notificationPanel').classList.add('hidden');
             }
+        }
+        
+        // --- NEWS FUNCTIONS ---
+        async function submitNews() {
+            const text = document.getElementById('newsInputText').value.trim();
+            if(!text && !pendingNewsImage) return;
+            
+            try {
+                await addDoc(collection(db, "news"), {
+                    text: text,
+                    image: pendingNewsImage,
+                    authorId: currentUser.id,
+                    authorName: currentUser.username,
+                    authorRole: currentUser.role,
+                    authorAvatar: currentUser.avatarImage,
+                    authorColor: currentUser.color,
+                    timestamp: serverTimestamp(),
+                    likes: [],
+                    comments: []
+                });
+                isCreatingNews = false;
+                pendingNewsImage = null;
+                renderNewsModal();
+            } catch(e) { console.error(e); }
+        }
+        
+        async function toggleNewsLike(newsId) {
+            const post = newsPosts.find(p => p.id === newsId);
+            if(!post) return;
+            
+            const likes = post.likes || [];
+            if(likes.includes(currentUser.id)) {
+                await updateDoc(doc(db, "news", newsId), { likes: arrayRemove(currentUser.id) });
+            } else {
+                await updateDoc(doc(db, "news", newsId), { likes: arrayUnion(currentUser.id) });
+            }
+        }
+        
+        async function postNewsComment(newsId, text) {
+            const comment = {
+                id: Date.now().toString(),
+                userId: currentUser.id,
+                username: currentUser.username,
+                text: text,
+                timestamp: Date.now()
+            };
+            await updateDoc(doc(db, "news", newsId), {
+                comments: arrayUnion(comment)
+            });
         }
 
         async function toggleReaction(msgId, emoji) {
@@ -997,7 +1091,7 @@
                 
                 isEditingProfile = false;
                 renderProfileModal();
-                renderSidebar(); 
+                renderChatRoom(); // Update Header Name
 
             } catch(e) {
                 console.error(e);
@@ -1023,6 +1117,7 @@
                 renderChatRoom(app);
                 renderThemeModal(); 
                 renderProfileModal();
+                renderNewsModal();
             } else {
                 renderLogin(app);
             }
@@ -1145,6 +1240,8 @@
                             gender,
                             color,
                             role,
+                            coins: 1000,
+                            gems: 10,
                             banner: roleConfig.gradient,
                             likedBy: [],
                             joinedAt: serverTimestamp(),
@@ -1172,6 +1269,31 @@
         }
 
         function renderChatRoom(container) {
+            // If container not provided, grab it if exists (re-render scenario)
+            if(!container) container = document.getElementById('app');
+            if(!container) return;
+            
+            // Build the top right profile HTML
+            const safeUsername = escapeHtml(currentUser.username);
+            const userAvatarHtml = currentUser.avatarImage 
+                ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm ring-2 ring-white user-profile-trigger cursor-pointer" data-user-id="${currentUser.id}">` 
+                : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs ring-2 ring-white user-profile-trigger cursor-pointer" data-user-id="${currentUser.id}">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
+
+            // Check if header exists to avoid full re-render flickering
+            const existingHeader = document.getElementById('chatHeader');
+            if(existingHeader) {
+                // Just update specific profile parts if needed, but for simplicity we re-render sidebar logic mostly.
+                // Actually, let's just re-inject the profile part into the header if it changed.
+                const profileContainer = document.getElementById('headerProfileContainer');
+                if(profileContainer) profileContainer.innerHTML = `
+                    <div class="flex items-center space-x-2 bg-black/5 px-2 py-1 rounded-full hover:bg-black/10 transition-colors cursor-pointer user-profile-trigger" data-user-id="${currentUser.id}">
+                        <span class="text-xs font-bold theme-text-primary hidden sm:block">${safeUsername}</span>
+                        ${userAvatarHtml}
+                    </div>
+                `;
+                return; 
+            }
+
             container.innerHTML = `
                 <div class="flex h-screen w-full flex-col theme-bg-app md:flex-row text-sm">
                     <!-- LEFT Sidebar -->
@@ -1194,13 +1316,26 @@
 
                     <!-- Main Chat -->
                     <div class="flex flex-1 flex-col overflow-hidden relative h-full">
-                        <div class="flex items-center justify-between border-b theme-bg-sidebar p-3 shadow-sm md:hidden shrink-0">
-                            <h1 class="text-lg font-bold theme-text-primary">SimpleConnect</h1>
-                             <div class="flex items-center space-x-2">
-                                <button id="menuBtn" class="p-2 opacity-70 hover:opacity-100">
+                        <!-- Header -->
+                        <div id="chatHeader" class="flex items-center justify-between border-b theme-bg-sidebar p-3 shadow-sm shrink-0 z-10">
+                            <div class="flex items-center md:hidden">
+                                <button id="menuBtn" class="p-2 opacity-70 hover:opacity-100 mr-2">
                                     <i data-lucide="menu" class="w-5 h-5"></i>
                                 </button>
-                             </div>
+                                <h1 class="text-lg font-bold theme-text-primary">SimpleConnect</h1>
+                            </div>
+                            <!-- Desktop Title (Hidden on Mobile) -->
+                            <div class="hidden md:block">
+                                <h1 class="text-lg font-bold theme-text-primary">Global Chat</h1>
+                            </div>
+
+                            <!-- Top Right Profile -->
+                            <div id="headerProfileContainer">
+                                <div class="flex items-center space-x-2 bg-black/5 px-2 py-1 rounded-full hover:bg-black/10 transition-colors cursor-pointer user-profile-trigger" data-user-id="${currentUser.id}">
+                                    <span class="text-xs font-bold theme-text-primary hidden sm:block">${safeUsername}</span>
+                                    ${userAvatarHtml}
+                                </div>
+                            </div>
                         </div>
 
                         <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 scroll-smooth"></div>
@@ -1239,6 +1374,7 @@
                     
                     <div id="themeModalContainer"></div>
                     <div id="profileModalContainer"></div>
+                    <div id="newsModalContainer"></div>
                 </div>
             `;
 
@@ -1404,6 +1540,227 @@
             
             renderChatMessages();
             renderNotificationsPanel();
+            renderNewsModal();
+        }
+        
+        // --- NEWS RENDER ---
+        function renderNewsModal() {
+            const container = document.getElementById('newsModalContainer');
+            if(!container) return;
+            
+            if(!showNewsModal) {
+                container.innerHTML = '';
+                return;
+            }
+            
+            const highStaff = ['developer', 'founder', 'head owner', 'owner'];
+            const userRole = (currentUser.role || '').toLowerCase();
+            const canPost = highStaff.includes(userRole);
+            
+            let newsContent = '';
+            
+            if (newsPosts.length === 0) {
+                newsContent = `<div class="p-8 text-center text-gray-400 italic">No news yet.</div>`;
+            } else {
+                newsContent = newsPosts.map(post => {
+                    const authorRole = getRoleConfig(post.authorRole);
+                    const time = post.timestamp ? new Date(post.timestamp.toMillis()).toLocaleString() : 'Just now';
+                    const isLiked = post.likes && post.likes.includes(currentUser.id);
+                    const likeCount = post.likes ? post.likes.length : 0;
+                    
+                    const commentsHtml = (post.comments || []).map(c => `
+                        <div class="flex items-start space-x-2 mt-2 bg-gray-50 p-2 rounded-lg">
+                            <div class="font-bold text-[10px] text-gray-700 shrink-0">${escapeHtml(c.username)}</div>
+                            <div class="text-[11px] text-gray-600 break-words">${escapeHtml(c.text)}</div>
+                        </div>
+                    `).join('');
+                    
+                    const avatarHtml = post.authorAvatar
+                        ? `<img src="${post.authorAvatar}" class="w-10 h-10 rounded-full object-cover shadow-sm">`
+                        : `<div class="w-10 h-10 rounded-full bg-gray-500 flex items-center justify-center text-white font-bold">${post.authorName.substring(0,2).toUpperCase()}</div>`;
+                    
+                    return `
+                        <div class="bg-black text-white rounded-xl overflow-hidden mb-6 shadow-lg border border-gray-800">
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center space-x-3">
+                                        ${avatarHtml}
+                                        <div>
+                                            <div class="font-bold text-lg leading-tight uppercase tracking-wide text-white" style="text-shadow: 0 0 10px rgba(255,255,255,0.5);">${escapeHtml(post.authorName)}</div>
+                                            <div class="text-xs text-gray-400">${time}</div>
+                                        </div>
+                                    </div>
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${authorRole.border} text-white bg-opacity-20 bg-white">
+                                        ${authorRole.label}
+                                    </span>
+                                </div>
+                                
+                                <div class="mb-4">
+                                    ${post.text ? `<div class="text-sm text-gray-200 mb-2 leading-relaxed">${window.DOMPurify.sanitize(window.marked.parse(post.text))}</div>` : ''}
+                                    ${post.image ? `<img src="${post.image}" class="w-full rounded-lg object-cover max-h-80 cursor-pointer" onclick="window.open(this.src)">` : ''}
+                                </div>
+                                
+                                <div class="flex items-center space-x-4 mb-3">
+                                    <button class="news-like-btn flex items-center space-x-1 hover:text-red-500 transition-colors ${isLiked ? 'text-red-500' : 'text-gray-400'}" data-id="${post.id}">
+                                        <i data-lucide="thumbs-up" class="w-4 h-4 ${isLiked ? 'fill-current' : ''}"></i>
+                                        <span class="text-xs font-bold">${likeCount}</span>
+                                    </button>
+                                </div>
+                                
+                                <div class="bg-gray-900 rounded-lg p-3">
+                                    <div class="max-h-32 overflow-y-auto space-y-1 mb-2">
+                                        ${(post.comments || []).map(c => `
+                                            <div class="text-xs">
+                                                <span class="font-bold text-blue-400">${escapeHtml(c.username)}:</span>
+                                                <span class="text-gray-300">${escapeHtml(c.text)}</span>
+                                            </div>
+                                        `).join('')}
+                                        ${(!post.comments || post.comments.length === 0) ? '<p class="text-[10px] text-gray-600 italic">No comments yet.</p>' : ''}
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <input type="text" class="news-comment-input flex-1 bg-gray-800 border-none rounded px-2 py-1 text-xs text-white focus:ring-1 focus:ring-blue-500" placeholder="Type your comment..." data-id="${post.id}">
+                                        <button class="news-comment-btn bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold" data-id="${post.id}">Send</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            container.innerHTML = `
+                <div id="newsOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
+                    <div class="bg-gray-900 w-full max-w-2xl h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
+                         <!-- Header -->
+                         <div class="p-4 border-b border-gray-800 bg-gray-900 flex justify-between items-center shrink-0 z-10">
+                            <h2 class="text-2xl font-black text-white uppercase tracking-widest">News</h2>
+                            <div class="flex items-center space-x-2">
+                                ${canPost ? `<button id="addNewsBtn" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors">Add</button>` : ''}
+                                <button id="closeNewsBtn" class="p-2 hover:bg-gray-800 rounded-full text-white transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+                            </div>
+                         </div>
+                         
+                         <!-- Creation Area (Toggle) -->
+                         ${isCreatingNews ? `
+                             <div class="p-4 bg-gray-800 border-b border-gray-700 animate-slideDown">
+                                <textarea id="newsInputText" class="w-full bg-gray-900 text-white p-3 rounded-lg border border-gray-700 focus:border-blue-500 outline-none text-sm min-h-[80px]" placeholder="What's happening?"></textarea>
+                                <div class="flex justify-between items-center mt-3">
+                                    <button id="newsUploadBtn" class="flex items-center space-x-2 text-gray-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-gray-700 transition-colors">
+                                        <i data-lucide="image" class="w-4 h-4"></i>
+                                        <span>Add Image</span>
+                                    </button>
+                                    <button id="submitNewsBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors">Post News</button>
+                                </div>
+                             </div>
+                         ` : ''}
+                         
+                         <!-- Feed -->
+                         <div class="flex-1 overflow-y-auto p-4 bg-black">
+                            ${newsContent}
+                         </div>
+                    </div>
+                </div>
+            `;
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function renderSidebar() {
+            const container = document.getElementById('sidebarContent');
+            if (!container) return;
+            const safeUsername = escapeHtml(currentUser.username);
+            
+            // Wallet Section HTML
+            const walletHtml = showWallet ? `
+                <div class="bg-gray-100 rounded-lg p-3 mt-2 border border-gray-200 wallet-enter">
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs text-gray-500 font-bold uppercase">Coins</span>
+                        <span class="text-sm font-bold text-yellow-600 flex items-center">
+                            ${currentUser.coins} 🪙
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-gray-500 font-bold uppercase">Gems</span>
+                        <span class="text-sm font-bold text-purple-600 flex items-center">
+                            ${currentUser.gems} 💎
+                        </span>
+                    </div>
+                </div>
+            ` : '';
+
+            container.innerHTML = `
+                <div class="space-y-4">
+                    <!-- Features Section -->
+                    <div>
+                        <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Features</h3>
+                        
+                        <button id="openNewsBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/50 transition-colors text-left border border-gray-200/50 hover:border-blue-200 group bg-white shadow-sm mb-2">
+                            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md group-hover:scale-110 transition-transform">
+                                <i data-lucide="newspaper" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm text-gray-800">News</p>
+                                <p class="text-[10px] text-gray-500">Updates & Announcements</p>
+                            </div>
+                        </button>
+                        
+                        <button id="walletBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/50 transition-colors text-left border border-gray-200/50 hover:border-yellow-200 group bg-white shadow-sm">
+                            <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-md group-hover:scale-110 transition-transform">
+                                <i data-lucide="wallet" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <p class="font-bold text-sm text-gray-800">Wallet</p>
+                                <p class="text-[10px] text-gray-500">Coins & Gems</p>
+                            </div>
+                        </button>
+                        ${walletHtml}
+                    </div>
+
+                    <!-- Settings Section -->
+                    <div class="pt-2 border-t theme-border-primary">
+                        <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Settings</h3>
+                        
+                        <button id="notificationBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 relative">
+                            <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-500 relative">
+                                <i data-lucide="bell" class="w-3 h-3"></i>
+                                <span id="notifBadge" class="notif-dot hidden"></span>
+                            </div>
+                            <div>
+                                <p class="font-medium text-xs">Notifications</p>
+                                <p class="text-[10px] opacity-60">Activity & Alerts</p>
+                            </div>
+                        </button>
+                        <!-- Notification Panel (Hidden) -->
+                        <div id="notificationPanel" class="hidden mt-1 mx-1 bg-white border border-gray-200 shadow-inner rounded-lg p-1 max-h-48 overflow-y-auto">
+                            <div class="text-center p-2 text-xs text-gray-400">Loading...</div>
+                        </div>
+
+                        <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
+                            <div class="flex h-6 w-6 items-center justify-center rounded-full theme-primary">
+                                <i data-lucide="palette" class="w-3 h-3 text-white"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-xs">Themes</p>
+                                <p class="text-[10px] opacity-60">Customization</p>
+                            </div>
+                        </button>
+                        ${currentUser.role === 'developer' ? `
+                        <button id="adminPanelBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 text-red-600">
+                            <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100">
+                                <i data-lucide="shield-alert" class="w-3 h-3 text-red-600"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-xs">Panel</p>
+                                <p class="text-[10px] opacity-60">Developer Access</p>
+                            </div>
+                        </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+            if(window.lucide) window.lucide.createIcons();
+            
+            // Re-render notifications into the new container
+            renderNotificationsPanel();
         }
 
         function renderNotificationsPanel() {
@@ -1480,77 +1837,6 @@
                 </div>
             `).join('');
             dropdown.classList.remove('hidden');
-        }
-
-        function renderSidebar() {
-            const container = document.getElementById('sidebarContent');
-            if (!container) return;
-            const safeUsername = escapeHtml(currentUser.username);
-            
-            const avatarHtml = currentUser.avatarImage 
-                ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">` 
-                : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
-            
-            const statusHtml = currentUser.status 
-                ? `<p class="text-[10px] text-gray-500 truncate max-w-[140px]">"${escapeHtml(currentUser.status)}"</p>` 
-                : `<div class="flex items-center text-[10px] text-green-500"><span class="mr-1 h-1 w-1 rounded-full bg-green-500"></span> Online</div>`;
-
-            container.innerHTML = `
-                <div>
-                    <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">My Profile</h3>
-                    <div class="user-profile-trigger flex items-center space-x-3 rounded-lg bg-gray-100/10 p-2 border border-gray-200/20 cursor-pointer hover:bg-gray-100/20 transition-colors" data-user-id="${currentUser.id}">
-                        ${avatarHtml}
-                        <div class="overflow-hidden">
-                            <p class="font-semibold text-xs truncate">${safeUsername}</p>
-                            ${statusHtml}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mt-4">
-                    <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Settings</h3>
-                    
-                    <button id="notificationBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 relative">
-                        <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-500 relative">
-                            <i data-lucide="bell" class="w-3 h-3"></i>
-                            <span id="notifBadge" class="notif-dot hidden"></span>
-                        </div>
-                        <div>
-                            <p class="font-medium text-xs">Notifications</p>
-                            <p class="text-[10px] opacity-60">Activity & Alerts</p>
-                        </div>
-                    </button>
-                    <!-- Notification Panel (Hidden) -->
-                    <div id="notificationPanel" class="hidden mt-1 mx-1 bg-white border border-gray-200 shadow-inner rounded-lg p-1 max-h-48 overflow-y-auto">
-                        <div class="text-center p-2 text-xs text-gray-400">Loading...</div>
-                    </div>
-
-                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
-                        <div class="flex h-6 w-6 items-center justify-center rounded-full theme-primary">
-                            <i data-lucide="palette" class="w-3 h-3 text-white"></i>
-                        </div>
-                        <div>
-                            <p class="font-medium text-xs">Themes</p>
-                            <p class="text-[10px] opacity-60">Customization</p>
-                        </div>
-                    </button>
-                    ${currentUser.role === 'developer' ? `
-                    <button id="adminPanelBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 text-red-600">
-                        <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100">
-                            <i data-lucide="shield-alert" class="w-3 h-3 text-red-600"></i>
-                        </div>
-                        <div>
-                            <p class="font-medium text-xs">Panel</p>
-                            <p class="text-[10px] opacity-60">Developer Access</p>
-                        </div>
-                    </button>
-                    ` : ''}
-                </div>
-            `;
-            if(window.lucide) window.lucide.createIcons();
-            
-            // Re-render notifications into the new container
-            renderNotificationsPanel();
         }
 
         function renderRightSidebar() {
@@ -1651,12 +1937,16 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
+        // ... Profile Modal (Same logic, ensured rendering) ...
         function renderProfileModal() {
             const container = document.getElementById('profileModalContainer');
             if (!container) return;
 
             if (!showProfileModal) { container.innerHTML = ''; return; }
-
+            
+            // Standard render logic from previous block maintained implicitly, no changes needed to core logic here
+            // Re-pasting for completeness if XML requires full file content, otherwise relying on structure.
+            // Assuming full file replacement, here is the function:
             const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip', likedBy: [] };
             const role = getRoleConfig(data.role);
             
@@ -1830,6 +2120,7 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
+        // ... getMessageHTML and renderChatMessages (kept as is, but ensures logic matches) ...
         function getMessageHTML(msg, isMe, safeName) {
             let cleanHtml = '';
             if (window.marked && window.DOMPurify) { 
@@ -1917,7 +2208,6 @@
             `;
         }
 
-        // Smart Diffing Render
         function renderChatMessages() {
             const list = document.getElementById('messagesList');
             if (!list) return;
@@ -1927,13 +2217,11 @@
                 return;
             }
 
-            // Remove placeholder if present
             if(list.querySelector('.text-center.opacity-40')) list.innerHTML = '';
 
             const currentIds = new Set(messages.map(m => m.id));
             let addedNewMessage = false;
 
-            // 1. Remove deleted messages
             Array.from(list.children).forEach(child => {
                  const id = child.id.replace('msg-', '');
                  if (id && !currentIds.has(id)) {
@@ -1941,14 +2229,12 @@
                  }
             });
 
-            // 2. Add or Update messages
             messages.forEach(msg => {
                 const elId = `msg-${msg.id}`;
                 let el = document.getElementById(elId);
                 const isMe = msg.senderId === currentUser.id;
                 const safeName = escapeHtml(msg.senderName);
                 
-                // If editing this specific message, show edit UI (simple re-render for this case)
                 if (editingMessageId === msg.id) {
                      if (!el) {
                          el = document.createElement('div');
@@ -1960,11 +2246,9 @@
                      return;
                 }
 
-                // Normal Message View
                 const contentHtml = getMessageHTML(msg, isMe, safeName);
                 
                 if (!el) {
-                    // Create New
                     el = document.createElement('div');
                     el.id = elId;
                     el.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} group message-group`;
@@ -1974,14 +2258,12 @@
                     list.appendChild(el);
                     addedNewMessage = true;
                 } else {
-                    // Update if changed
                     el.innerHTML = contentHtml;
                     el.dataset.ts = msg.timestamp;
                     el.dataset.edited = msg.edited;
                 }
             });
             
-            // Auto-scroll on new message
             if (addedNewMessage) {
                  setTimeout(() => list.scrollTop = list.scrollHeight, 50);
             }
