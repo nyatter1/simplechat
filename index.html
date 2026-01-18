@@ -125,6 +125,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, doc, updateDoc, deleteDoc, serverTimestamp, setDoc, getDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIG ---
@@ -139,6 +140,7 @@
         };
 
         const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
         const db = getFirestore(app);
 
         // --- SOUNDS ---
@@ -172,7 +174,8 @@
         let editProfileForm = { 
             username: '', color: '', banner: '', 
             avatarImage: null, bannerImage: null, 
-            status: '', youtubeId: '' 
+            status: '', youtubeId: '',
+            age: '', gender: ''
         }; 
 
         let currentThemeId = 0;
@@ -324,6 +327,14 @@
                 gradient: 'from-yellow-400 to-orange-500'
             };
         }
+        
+        function getRolePriority(role) {
+            const r = (role || '').toLowerCase();
+            if (r === 'developer') return 100;
+            if (r === 'admin') return 50;
+            if (r === 'vip') return 10;
+            return 0;
+        }
 
         function getYouTubeId(url) {
             if (!url) return null;
@@ -336,24 +347,40 @@
         function init() {
             themes = generateThemes();
             
-            const storedUser = localStorage.getItem('chat_user');
-            if (storedUser) {
-                try { currentUser = JSON.parse(storedUser); } 
-                catch (e) { localStorage.removeItem('chat_user'); }
-            }
-
             const storedTheme = localStorage.getItem('chat_theme_id');
             const initTheme = storedTheme ? parseInt(storedTheme) : 0;
             applyTheme(initTheme);
             previewThemeId = initTheme;
 
-            render();
-            
-            if (currentUser) {
-                setupFirestoreListeners();
-                updatePresenceAndMigration();
-                setInterval(updatePresenceAndMigration, 60000);
-            }
+            // Auth State Listener
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    try {
+                        const userDoc = await getDoc(doc(db, "users", user.uid));
+                        if (userDoc.exists()) {
+                            currentUser = { id: user.uid, ...userDoc.data() };
+                            // Fallback if role is missing
+                            if (!currentUser.role) currentUser.role = 'vip';
+                            
+                            // Start Listeners
+                            render();
+                            setupFirestoreListeners();
+                            updatePresenceAndMigration();
+                            setInterval(updatePresenceAndMigration, 60000);
+                        } else {
+                            // Account created but no doc? (Edge case)
+                            console.error("User authenticated but no profile found.");
+                            renderLogin(document.getElementById('app'));
+                        }
+                    } catch (e) {
+                        console.error("Auth init error:", e);
+                        renderLogin(document.getElementById('app'));
+                    }
+                } else {
+                    currentUser = null;
+                    render(); // Will render Login
+                }
+            });
 
             document.addEventListener('click', handleGlobalClicks);
             
@@ -396,23 +423,6 @@
             if (!currentUser) return;
             try {
                 const updates = { lastSeen: serverTimestamp() };
-                if (!currentUser.role) {
-                    if (currentUser.username.toLowerCase() === 'developer') {
-                        currentUser.role = 'developer';
-                        updates.role = 'developer';
-                    } else {
-                        currentUser.role = 'vip';
-                        updates.role = 'vip';
-                    }
-                    localStorage.setItem('chat_user', JSON.stringify(currentUser));
-                }
-                
-                if (!currentUser.banner) {
-                     const roleConfig = getRoleConfig(currentUser.role);
-                     currentUser.banner = roleConfig.gradient;
-                     updates.banner = roleConfig.gradient;
-                     localStorage.setItem('chat_user', JSON.stringify(currentUser));
-                }
                 await setDoc(doc(db, "users", currentUser.id), updates, { merge: true });
             } catch (e) { console.error("Presence update failed", e); }
         }
@@ -451,11 +461,20 @@
                 const active = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
+                    // Consider online if seen recently
                     if (data.lastSeen && data.lastSeen.toMillis() > cutoff) {
                         active.push({ id: doc.id, ...data });
                     }
                 });
-                onlineUsers = active.sort((a,b) => a.username.localeCompare(b.username));
+                
+                // Sort by Rank Hierarchy then Alphabetical
+                onlineUsers = active.sort((a,b) => {
+                    const pA = getRolePriority(a.role);
+                    const pB = getRolePriority(b.role);
+                    if (pA !== pB) return pB - pA; // Higher priority first
+                    return a.username.localeCompare(b.username);
+                });
+                
                 renderRightSidebar();
                 renderSidebar(); // Update My Status in sidebar
             });
@@ -541,7 +560,9 @@
                     avatarImage: viewingProfileData.avatarImage || null,
                     bannerImage: viewingProfileData.bannerImage || null,
                     youtubeId: viewingProfileData.youtubeId || '',
-                    status: viewingProfileData.status || ''
+                    status: viewingProfileData.status || '',
+                    age: viewingProfileData.age || '',
+                    gender: viewingProfileData.gender || ''
                 };
                 renderProfileModal();
             }
@@ -610,7 +631,6 @@
                 users.push(currentUser.id);
             }
             
-            // Clean up empty arrays? No, standard logic fine.
             const updates = { [`reactions.${emoji}`]: users };
             await updateDoc(doc(db, "messages", msgId), updates);
         }
@@ -634,11 +654,18 @@
                         setTimeout(() => {
                             if(document.getElementById('hidden-player')) {
                                 player = new YT.Player('hidden-player', {
-                                    height: '0', width: '0',
+                                    height: '1', width: '1', // Must be 1x1 to render to allow playback
                                     videoId: viewingProfileData.youtubeId,
+                                    playerVars: { 
+                                        'autoplay': 1, 
+                                        'playsinline': 1,
+                                        'controls': 0,
+                                        'disablekb': 1
+                                    },
                                     events: {
                                         'onReady': (event) => {
                                             isPlayerReady = true;
+                                            event.target.unMute();
                                             event.target.playVideo();
                                             isMusicPlaying = true;
                                             renderProfileModal();
@@ -667,6 +694,8 @@
             const newName = document.getElementById('editUsernameInput').value.trim();
             const status = document.getElementById('editStatusInput').value.trim();
             const youtubeLink = document.getElementById('editYoutubeInput').value.trim();
+            const age = document.getElementById('editAgeInput').value.trim();
+            const gender = document.getElementById('editGenderInput').value.trim();
             const errorEl = document.getElementById('editProfileError');
             
             if (!newName || newName.length < 2) {
@@ -701,7 +730,9 @@
                     avatarImage: editProfileForm.avatarImage,
                     bannerImage: editProfileForm.bannerImage,
                     status: status,
-                    youtubeId: yId
+                    youtubeId: yId,
+                    age: age,
+                    gender: gender
                 };
                 
                 if(editProfileForm.color) updateData.color = editProfileForm.color;
@@ -709,9 +740,9 @@
 
                 await updateDoc(doc(db, "users", currentUser.id), updateData);
 
-                currentUser = { ...currentUser, ...updateData };
-                localStorage.setItem('chat_user', JSON.stringify(currentUser));
+                // We do NOT change role here. Role persists in DB.
                 
+                currentUser = { ...currentUser, ...updateData };
                 viewingProfileData = { ...viewingProfileData, ...updateData };
                 isEditingProfile = false;
                 renderProfileModal();
@@ -741,94 +772,144 @@
         }
 
         function renderLogin(container) {
-            container.innerHTML = `
-                <div class="flex h-full min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 p-4">
-                    <div class="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-                        <div class="mb-6 flex flex-col items-center text-center">
-                            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
-                                <i data-lucide="message-circle" class="w-6 h-6"></i>
-                            </div>
-                            <h1 class="mb-1 text-2xl font-bold text-gray-900">SimpleConnect</h1>
-                            <p class="text-xs text-gray-500">Live, Real-time Chat.</p>
-                        </div>
-                        <form id="loginForm" class="space-y-4">
-                            <div class="space-y-1">
-                                <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Display Name</label>
-                                <input id="username" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. Alex" autocomplete="off" autofocus>
-                                <p id="loginError" class="text-xs text-red-500 hidden"></p>
-                            </div>
-                            <button id="loginBtn" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">
-                                Join Chat
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            `;
+            // Check if already authenticated to prevent flash
+            if(auth.currentUser && currentUser) return; 
 
-            document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            // Defaults to 'login' view, but can switch to 'signup'
+            let view = 'login'; 
+
+            const renderForm = () => {
+                container.innerHTML = `
+                    <div class="flex h-full min-h-screen w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 p-4">
+                        <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl transition-all">
+                            <div class="mb-6 flex flex-col items-center text-center">
+                                <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                                    <i data-lucide="message-circle" class="w-6 h-6"></i>
+                                </div>
+                                <h1 class="mb-1 text-2xl font-bold text-gray-900">SimpleConnect</h1>
+                                <p class="text-xs text-gray-500">Live, Real-time Chat.</p>
+                            </div>
+
+                            <div class="mb-6 flex rounded-lg bg-gray-100 p-1">
+                                <button id="tabLogin" class="flex-1 rounded-md py-1.5 text-sm font-medium transition-all ${view === 'login' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}">Sign In</button>
+                                <button id="tabSignup" class="flex-1 rounded-md py-1.5 text-sm font-medium transition-all ${view === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}">Sign Up</button>
+                            </div>
+
+                            <form id="authForm" class="space-y-4">
+                                ${view === 'signup' ? `
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="space-y-1">
+                                            <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Username</label>
+                                            <input id="regUsername" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Display Name" required>
+                                        </div>
+                                        <div class="space-y-1">
+                                            <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Age</label>
+                                            <input id="regAge" type="number" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. 24">
+                                        </div>
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Gender</label>
+                                        <select id="regGender" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
+                                            <option value="">Select Gender</option>
+                                            <option value="Male">Male</option>
+                                            <option value="Female">Female</option>
+                                            <option value="Non-binary">Non-binary</option>
+                                            <option value="Other">Other</option>
+                                        </select>
+                                    </div>
+                                ` : ''}
+
+                                <div class="space-y-1">
+                                    <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Email</label>
+                                    <input id="authEmail" type="email" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="name@example.com" required>
+                                </div>
+
+                                <div class="space-y-1">
+                                    <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Password</label>
+                                    <input id="authPass" type="password" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="••••••••" required>
+                                </div>
+                                
+                                <p id="loginError" class="text-xs text-red-500 hidden"></p>
+                                
+                                <button id="submitBtn" type="submit" class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50">
+                                    ${view === 'login' ? 'Sign In' : 'Create Account'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+                
+                // Re-attach listeners
+                document.getElementById('tabLogin').onclick = () => { view = 'login'; renderForm(); };
+                document.getElementById('tabSignup').onclick = () => { view = 'signup'; renderForm(); };
+                document.getElementById('authForm').onsubmit = handleAuth;
+            };
+
+            const handleAuth = async (e) => {
                 e.preventDefault();
-                const usernameInput = document.getElementById('username');
-                const btn = document.getElementById('loginBtn');
+                const btn = document.getElementById('submitBtn');
                 const err = document.getElementById('loginError');
+                const email = document.getElementById('authEmail').value.trim();
+                const pass = document.getElementById('authPass').value.trim();
                 
-                const username = usernameInput.value.trim();
-                if (!username || username.length < 2) {
-                    err.textContent = 'Name too short';
-                    err.classList.remove('hidden');
-                    return;
-                }
-                
-                btn.disabled = true;
                 err.classList.add('hidden');
+                btn.disabled = true;
 
                 try {
-                    const usernameLower = username.toLowerCase();
-                    const q = query(collection(db, "users"), where("usernameLower", "==", usernameLower));
-                    const snapshot = await getDocs(q);
-                    
-                    if (!snapshot.empty) {
-                        err.textContent = 'Username taken.';
-                        err.classList.remove('hidden');
-                        btn.disabled = false;
-                        return;
+                    if (view === 'signup') {
+                        const username = document.getElementById('regUsername').value.trim();
+                        const age = document.getElementById('regAge').value.trim();
+                        const gender = document.getElementById('regGender').value;
+
+                        if (username.length < 2) throw new Error("Username too short");
+
+                        // Check Username Availability
+                        const q = query(collection(db, "users"), where("usernameLower", "==", username.toLowerCase()));
+                        const snap = await getDocs(q);
+                        if (!snap.empty) throw new Error("Username already taken.");
+
+                        // Create Auth User
+                        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+                        const userId = cred.user.uid;
+
+                        // Initial Role Logic: If username is 'developer', assign dev role.
+                        // This persists in DB even if username changes later.
+                        let role = 'vip';
+                        if (username.toLowerCase() === 'developer') role = 'developer';
+                        const roleConfig = getRoleConfig(role);
+                        const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+
+                        // Create Firestore Doc
+                        await setDoc(doc(db, "users", userId), {
+                            username,
+                            usernameLower: username.toLowerCase(),
+                            email,
+                            age,
+                            gender,
+                            color,
+                            role,
+                            banner: roleConfig.gradient,
+                            joinedAt: serverTimestamp(),
+                            lastSeen: serverTimestamp()
+                        });
+
+                        // CurrentUser will be set by onAuthStateChanged
+                    } else {
+                        // Sign In
+                        await signInWithEmailAndPassword(auth, email, pass);
                     }
-
-                    const userId = crypto.randomUUID();
-                    const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
-                    const role = 'vip'; 
-                    const roleConfig = getRoleConfig(role);
-
-                    const user = {
-                        id: userId,
-                        username,
-                        usernameLower,
-                        color,
-                        role,
-                        banner: roleConfig.gradient,
-                        joinedAt: Date.now()
-                    };
-                    
-                    currentUser = user;
-                    localStorage.setItem('chat_user', JSON.stringify(user));
-                    
-                    await setDoc(doc(db, "users", userId), {
-                        username,
-                        usernameLower,
-                        color,
-                        role,
-                        banner: roleConfig.gradient,
-                        lastSeen: serverTimestamp(),
-                        joinedAt: serverTimestamp()
-                    });
-
-                    init();
                 } catch (error) {
-                    console.error("Login error:", error);
-                    err.textContent = 'Error connecting to server.';
+                    console.error("Auth error:", error);
+                    let msg = error.message;
+                    if (msg.includes('auth/invalid-credential') || msg.includes('auth/user-not-found')) msg = "Invalid email or password.";
+                    else if (msg.includes('auth/email-already-in-use')) msg = "Email already registered.";
+                    err.textContent = msg;
                     err.classList.remove('hidden');
                     btn.disabled = false;
                 }
-            });
+            };
+
+            renderForm();
         }
 
         function renderChatRoom(container) {
@@ -859,7 +940,7 @@
                             </button>
                         </div>
 
-                        <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3"></div>
+                        <div id="messagesList" class="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 scroll-smooth"></div>
                         <div id="typingIndicator" class="px-4 py-1.5 min-h-[1.5rem] text-[10px] opacity-60 italic flex items-center shrink-0"></div>
 
                         <!-- Input Area with Mention Dropdown -->
@@ -913,8 +994,10 @@
             if (overlay) overlay.addEventListener('click', toggleSidebar);
 
             document.getElementById('logoutBtn').addEventListener('click', () => {
-                localStorage.removeItem('chat_user');
-                location.reload();
+                signOut(auth).then(() => {
+                    localStorage.removeItem('chat_user');
+                    // onAuthStateChanged will handle the rest
+                });
             });
 
             const messageForm = document.getElementById('messageForm');
@@ -1068,9 +1151,8 @@
                     ? `<img src="${u.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">`
                     : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'} text-xs">${escapeHtml(u.username).substring(0, 2).toUpperCase()}</div>`;
                 
-                const statusDisplay = u.status 
-                    ? `<p class="text-[10px] text-gray-500 truncate">"${escapeHtml(u.status)}"</p>`
-                    : `<div class="flex items-center mt-0.5"><span class="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold ${role.bg} ${role.color} ${role.border} border uppercase tracking-wide"><i data-lucide="${role.icon}" class="w-2.5 h-2.5 mr-0.5 ${role.fill} ${role.color}"></i> ${role.label}</span></div>`;
+                // Rank Badge HTML
+                const rankBadge = `<span class="ml-1 inline-flex items-center justify-center rounded-full ${role.bg} p-0.5 border ${role.border}" title="${role.label}"><i data-lucide="${role.icon}" class="w-3 h-3 ${role.color} ${role.fill}"></i></span>`;
 
                 return `
                 <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
@@ -1079,12 +1161,13 @@
                       <div class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-white ring-1 ring-gray-100"></div>
                    </div>
                    <div class="ml-2.5 min-w-0 flex-1 overflow-hidden">
-                      <div class="flex items-center justify-between">
-                          <p class="text-xs font-semibold truncate ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
+                      <div class="flex items-center">
+                          <p class="text-xs font-semibold truncate max-w-[100px] ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
                               ${escapeHtml(u.username)}
                           </p>
+                          ${rankBadge}
                       </div>
-                      ${statusDisplay}
+                      ${u.status ? `<p class="text-[10px] text-gray-500 truncate">"${escapeHtml(u.status)}"</p>` : `<p class="text-[9px] text-green-600 font-medium">Online</p>`}
                    </div>
                 </div>
             `}).join('');
@@ -1176,7 +1259,7 @@
 
             container.innerHTML = `
                 <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
-                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-visible transform transition-all scale-100 relative">
+                     <div class="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-visible transform transition-all scale-100 relative max-h-[90vh] overflow-y-auto">
                         <button id="closeProfileBtn" class="absolute top-4 right-4 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-full text-white transition-colors">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
@@ -1195,8 +1278,8 @@
                         </div>
                         
                         <div class="px-6 pb-6 pt-16 relative text-center">
-                            <!-- Hidden YouTube Player Container -->
-                            <div id="hidden-player" class="hidden"></div>
+                            <!-- Hidden YouTube Player Container (Opacity 0 to allow playback) -->
+                            <div id="hidden-player" class="absolute opacity-0 pointer-events-none w-1 h-1 overflow-hidden"></div>
                         
                             ${(!isEditingProfile && data.youtubeId) ? `
                                 <div class="mb-4 mx-auto w-full max-w-[90%] bg-gray-900 rounded-xl p-2.5 flex items-center justify-between shadow-lg ring-1 ring-gray-800">
@@ -1238,6 +1321,23 @@
                                             <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm font-bold text-gray-900 outline-none" autocomplete="off" placeholder="Enter username...">
                                         </div>
                                         
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Age</label>
+                                                <input id="editAgeInput" type="number" value="${escapeHtml(editProfileForm.age)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="Age">
+                                            </div>
+                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Gender</label>
+                                                <select id="editGenderInput" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none">
+                                                    <option value="" ${editProfileForm.gender === '' ? 'selected' : ''}>Select</option>
+                                                    <option value="Male" ${editProfileForm.gender === 'Male' ? 'selected' : ''}>Male</option>
+                                                    <option value="Female" ${editProfileForm.gender === 'Female' ? 'selected' : ''}>Female</option>
+                                                    <option value="Non-binary" ${editProfileForm.gender === 'Non-binary' ? 'selected' : ''}>Non-binary</option>
+                                                    <option value="Other" ${editProfileForm.gender === 'Other' ? 'selected' : ''}>Other</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
                                         <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
                                             <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Status</label>
                                             <input id="editStatusInput" type="text" value="${escapeHtml(editProfileForm.status)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="What's on your mind?">
@@ -1257,6 +1357,11 @@
                                     <div class="flex flex-col items-center justify-center space-y-1">
                                         <h2 class="text-2xl font-black text-gray-900 leading-tight">${escapeHtml(username)}</h2>
                                         ${data.status ? `<div class="bg-gray-100 px-3 py-1 rounded-full text-xs text-gray-600 italic">"${escapeHtml(data.status)}"</div>` : ''}
+                                        <div class="flex items-center space-x-2 mt-1 text-xs text-gray-500">
+                                            ${data.age ? `<span>${escapeHtml(data.age)} yrs</span>` : ''}
+                                            ${data.age && data.gender ? '<span>•</span>' : ''}
+                                            ${data.gender ? `<span>${escapeHtml(data.gender)}</span>` : ''}
+                                        </div>
                                     </div>
                                 `}
 
@@ -1392,6 +1497,7 @@
             if(list.querySelector('.text-center.opacity-40')) list.innerHTML = '';
 
             const currentIds = new Set(messages.map(m => m.id));
+            let addedNewMessage = false;
 
             // 1. Remove deleted messages
             Array.from(list.children).forEach(child => {
@@ -1432,9 +1538,7 @@
                     el.dataset.ts = msg.timestamp;
                     el.dataset.edited = msg.edited;
                     list.appendChild(el);
-                    
-                    // Auto-scroll on new message
-                    setTimeout(() => list.scrollTop = list.scrollHeight, 50);
+                    addedNewMessage = true;
                 } else {
                     // Update if changed (timestamp, edited, or reactions)
                     // Simplified check: we just re-render content if timestamps differ or edited flag differs.
@@ -1448,6 +1552,11 @@
                 }
             });
             
+            // Auto-scroll on new message
+            if (addedNewMessage) {
+                 setTimeout(() => list.scrollTop = list.scrollHeight, 50);
+            }
+
             if(window.lucide) window.lucide.createIcons();
         }
 
