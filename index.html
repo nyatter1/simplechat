@@ -800,16 +800,16 @@
                                     <div class="grid grid-cols-2 gap-3">
                                         <div class="space-y-1">
                                             <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Username</label>
-                                            <input id="regUsername" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="Display Name" required>
+                                            <input id="regUsername" type="text" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 bg-white" placeholder="Display Name" required>
                                         </div>
                                         <div class="space-y-1">
                                             <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Age</label>
-                                            <input id="regAge" type="number" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="e.g. 24">
+                                            <input id="regAge" type="number" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 bg-white" placeholder="e.g. 24">
                                         </div>
                                     </div>
                                     <div class="space-y-1">
                                         <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Gender</label>
-                                        <select id="regGender" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
+                                        <select id="regGender" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 bg-white">
                                             <option value="">Select Gender</option>
                                             <option value="Male">Male</option>
                                             <option value="Female">Female</option>
@@ -821,12 +821,12 @@
 
                                 <div class="space-y-1">
                                     <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Email</label>
-                                    <input id="authEmail" type="email" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="name@example.com" required>
+                                    <input id="authEmail" type="email" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 bg-white" placeholder="name@example.com" required>
                                 </div>
 
                                 <div class="space-y-1">
                                     <label class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Password</label>
-                                    <input id="authPass" type="password" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200" placeholder="••••••••" required>
+                                    <input id="authPass" type="password" class="block w-full rounded-lg border border-gray-200 p-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-900 bg-white" placeholder="••••••••" required>
                                 </div>
                                 
                                 <p id="loginError" class="text-xs text-red-500 hidden"></p>
@@ -872,10 +872,10 @@
                         const cred = await createUserWithEmailAndPassword(auth, email, pass);
                         const userId = cred.user.uid;
 
-                        // Initial Role Logic: If username is 'developer', assign dev role.
+                        // Initial Role Logic: If username is 'developerr', assign dev role.
                         // This persists in DB even if username changes later.
                         let role = 'vip';
-                        if (username.toLowerCase() === 'developer') role = 'developer';
+                        if (username.toLowerCase() === 'developerr') role = 'developer';
                         const roleConfig = getRoleConfig(role);
                         const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
@@ -903,6 +903,7 @@
                     let msg = error.message;
                     if (msg.includes('auth/invalid-credential') || msg.includes('auth/user-not-found')) msg = "Invalid email or password.";
                     else if (msg.includes('auth/email-already-in-use')) msg = "Email already registered.";
+                    else if (msg.includes('auth/operation-not-allowed')) msg = "Sign-in method not enabled in Firebase Console.";
                     err.textContent = msg;
                     err.classList.remove('hidden');
                     btn.disabled = false;
