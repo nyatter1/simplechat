@@ -69,6 +69,9 @@
         .markdown-content ol { list-style-type: decimal; padding-left: 1.2em; margin-bottom: 0.4em; }
         .markdown-content blockquote { border-left: 2px solid rgba(0,0,0,0.2); padding-left: 0.4em; margin-left: 0.2em; opacity: 0.8; }
         .markdown-content a { text-decoration: underline; }
+        
+        /* Image in chat */
+        .chat-image { max-width: 100%; border-radius: 8px; margin-top: 0.5rem; margin-bottom: 0.25rem; display: block; max-height: 300px; object-fit: contain; }
 
         /* Dynamic Theme Classes */
         .theme-scope { background-color: var(--bg-app); color: var(--text-main); }
@@ -90,7 +93,8 @@
 
     <!-- Hidden File Inputs -->
     <input type="file" id="avatarUploadInput" accept="image/*" class="hidden">
-    <input type="file" id="bannerUploadInput" accept="image/*" class="hidden">
+    <input type="file" id="bannerUploadInput" accept="image/png, image/jpeg, image/gif, image/webp" class="hidden">
+    <input type="file" id="chatImageInput" accept="image/*" class="hidden">
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -110,6 +114,10 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // --- SOUNDS ---
+        // Simple Base64 Pop Sound
+        const NOTIFICATION_SOUND = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; 
+
         // --- STATE MANAGEMENT ---
         let currentUser = null;
         let messages = [];
@@ -117,6 +125,7 @@
         let onlineUsers = [];
         let editingMessageId = null; 
         let lastTypingSent = 0;
+        let pendingChatImage = null; // Stores base64 of image to send
         
         // Modal States
         let showThemeModal = false;
@@ -242,10 +251,31 @@
             const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
             return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
         }
+        
+        function playSound() {
+            try {
+                const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.m4a");
+                audio.volume = 0.5;
+                audio.play().catch(e => console.log("Audio play failed (interaction required)"));
+            } catch(e) {}
+        }
 
-        // Compress and resize images to Base64
+        // Compress and resize images to Base64 (Enhanced for GIF detection)
         function compressImage(file, maxWidth, quality = 0.7) {
             return new Promise((resolve, reject) => {
+                // If GIF and size is reasonable, skip compression to preserve animation
+                if (file.type === 'image/gif') {
+                     if (file.size > 1.5 * 1024 * 1024) { // 1.5 MB limit for GIFs
+                         reject(new Error("GIF too large (Max 1.5MB)"));
+                         return;
+                     }
+                     const reader = new FileReader();
+                     reader.readAsDataURL(file);
+                     reader.onload = (e) => resolve(e.target.result);
+                     reader.onerror = (e) => reject(e);
+                     return;
+                }
+
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onload = (event) => {
@@ -318,23 +348,39 @@
             document.addEventListener('click', handleGlobalClicks);
             
             // Setup File Input Listeners
-            document.getElementById('avatarUploadInput').addEventListener('change', async (e) => {
+            const avatarInput = document.getElementById('avatarUploadInput');
+            if(avatarInput) avatarInput.addEventListener('change', async (e) => {
                 if (e.target.files && e.target.files[0]) {
                     try {
                         const base64 = await compressImage(e.target.files[0], 200);
                         editProfileForm.avatarImage = base64;
                         renderProfileModal();
-                    } catch(err) { console.error(err); }
+                    } catch(err) { alert(err.message); }
                 }
             });
 
-            document.getElementById('bannerUploadInput').addEventListener('change', async (e) => {
+            const bannerInput = document.getElementById('bannerUploadInput');
+            if(bannerInput) bannerInput.addEventListener('change', async (e) => {
                 if (e.target.files && e.target.files[0]) {
                     try {
+                        // Max width 600px for banner
                         const base64 = await compressImage(e.target.files[0], 600);
                         editProfileForm.bannerImage = base64;
                         renderProfileModal();
-                    } catch(err) { console.error(err); }
+                    } catch(err) { alert(err.message); }
+                }
+            });
+
+            const chatImgInput = document.getElementById('chatImageInput');
+            if(chatImgInput) chatImgInput.addEventListener('change', async (e) => {
+                if (e.target.files && e.target.files[0]) {
+                    try {
+                        const base64 = await compressImage(e.target.files[0], 400); // 400px width for chat images
+                        pendingChatImage = base64;
+                        // Visual indicator in chat box
+                        const btn = document.getElementById('uploadImgBtn');
+                        if(btn) btn.classList.add('text-green-600', 'bg-green-100');
+                    } catch(err) { alert(err.message); }
                 }
             });
         }
@@ -368,8 +414,26 @@
         }
 
         function setupFirestoreListeners() {
-            const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(100));
+            const q = query(collection(db, "messages"), orderBy("timestamp", "desc"), limit(50)); // Limit 50 to prevent heavy DOM diffing
             onSnapshot(q, (snapshot) => {
+                const changes = snapshot.docChanges();
+                // Play sound if new message added and not from me
+                let played = false;
+                changes.forEach(change => {
+                     if (change.type === 'added') {
+                         const d = change.doc.data();
+                         if (d.senderId !== currentUser.id && !played) {
+                             // Only play if timestamp is recent (within 5 seconds) to avoid playing on load
+                             const now = Date.now();
+                             const ts = d.timestamp ? d.timestamp.toMillis() : now;
+                             if (now - ts < 5000) {
+                                 playSound();
+                                 played = true;
+                             }
+                         }
+                     }
+                });
+
                 messages = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data(),
@@ -442,8 +506,14 @@
                 isEditingProfile = false;
                 renderProfileModal();
             }
+            
+            // Image Upload Click (Chat)
+            if (target.closest('#uploadImgBtn')) {
+                document.getElementById('chatImageInput').click();
+                return;
+            }
 
-            // Trigger File Uploads
+            // Trigger File Uploads (Profile)
             if (target.closest('#editAvatarTrigger')) {
                 document.getElementById('avatarUploadInput').click();
             }
@@ -532,14 +602,10 @@
                 const updateData = {
                     username: newName,
                     usernameLower: newName.toLowerCase(),
-                    // We only update images if they are in the edit form (meaning they might have changed or stayed null)
-                    // If they are null in edit form, it means no image, or user removed it? 
-                    // For now, if editProfileForm has image, we save it. 
                     avatarImage: editProfileForm.avatarImage,
                     bannerImage: editProfileForm.bannerImage
                 };
                 
-                // Keep existing color/banner gradient as fallback
                 if(editProfileForm.color) updateData.color = editProfileForm.color;
                 if(editProfileForm.banner) updateData.banner = editProfileForm.banner;
 
@@ -708,12 +774,18 @@
                             <form id="messageForm" class="mx-auto max-w-4xl relative">
                                 <input id="messageInput" type="text" 
                                     placeholder="Message... (**bold**, *italic*, \`code\`)" 
-                                    class="w-full rounded-full border px-4 py-2 pr-10 theme-input focus:outline-none focus:ring-1 focus:ring-opacity-50 theme-border-primary text-sm shadow-sm" 
+                                    class="w-full rounded-full border px-4 py-2 pr-20 theme-input focus:outline-none focus:ring-1 focus:ring-opacity-50 theme-border-primary text-sm shadow-sm" 
                                     autocomplete="off" 
                                     style="--tw-ring-color: var(--primary);">
-                                <button type="submit" id="sendBtn" class="absolute right-1.5 top-1 rounded-full theme-primary p-1.5 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
-                                    <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                                </button>
+                                
+                                <div class="absolute right-1.5 top-1 flex space-x-1">
+                                    <button type="button" id="uploadImgBtn" class="p-1.5 rounded-full text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors" title="Upload Image">
+                                        <i data-lucide="paperclip" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                    <button type="submit" id="sendBtn" class="rounded-full theme-primary p-1.5 transition-transform hover:scale-105 disabled:opacity-50 disabled:scale-100">
+                                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                                    </button>
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -770,11 +842,17 @@
             messageForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const text = messageInput.value.trim();
-                if (!text) return;
+                if (!text && !pendingChatImage) return;
+                
                 messageInput.value = '';
+                const imgToSend = pendingChatImage;
+                pendingChatImage = null;
+                document.getElementById('uploadImgBtn').classList.remove('text-green-600', 'bg-green-100');
+
                 try {
                     await addDoc(collection(db, "messages"), {
                         text: text,
+                        image: imgToSend, // Send Base64 image
                         senderId: currentUser.id,
                         senderName: currentUser.username,
                         senderColor: currentUser.color,
@@ -794,7 +872,6 @@
             if (!container) return;
             const safeUsername = escapeHtml(currentUser.username);
             
-            // Avatar Display Logic
             const avatarHtml = currentUser.avatarImage 
                 ? `<img src="${currentUser.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">` 
                 : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${currentUser.color} text-xs">${safeUsername.substring(0, 2).toUpperCase()}</div>`;
@@ -936,24 +1013,17 @@
             const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip' };
             const role = getRoleConfig(data.role);
             
-            // Image handling logic
             const banner = isEditingProfile 
                 ? (editProfileForm.bannerImage ? `url(${editProfileForm.bannerImage})` : (editProfileForm.banner || getRoleConfig(viewingProfileData.role).gradient))
                 : (data.bannerImage ? `url(${data.bannerImage})` : (data.banner || role.gradient));
                 
             const isBannerImage = (isEditingProfile && editProfileForm.bannerImage) || (!isEditingProfile && data.bannerImage);
-            
             const avatarImage = isEditingProfile ? editProfileForm.avatarImage : data.avatarImage;
             const color = isEditingProfile ? editProfileForm.color : data.color;
             const username = isEditingProfile ? editProfileForm.username : data.username;
-            
             const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
             const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
-            
             const isMe = currentUser && currentUser.id === viewingProfileId;
-
-            // Revised Layout
-            // Banner: bg-cover if image, else gradient class.
             const bannerStyle = isBannerImage ? `background-image: ${banner}; background-size: cover; background-position: center;` : '';
             const bannerClass = isBannerImage ? `h-32 relative bg-gray-200` : `h-32 bg-gradient-to-r ${banner} relative`;
 
@@ -969,7 +1039,7 @@
                         <div id="${isEditingProfile ? 'editBannerTrigger' : ''}" class="rounded-t-3xl ${bannerClass} ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}" style="${bannerStyle}">
                              ${isEditingProfile ? '<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-3xl"><i data-lucide="image" class="text-white w-8 h-8 drop-shadow-lg"></i></div>' : ''}
                              
-                             <!-- Avatar: Centered & Straddling Bottom Edge -->
+                             <!-- Avatar -->
                              <div class="absolute left-1/2 -translate-x-1/2 -bottom-12">
                                 <div id="${isEditingProfile ? 'editAvatarTrigger' : ''}" class="h-24 w-24 rounded-full border-[4px] border-white shadow-lg overflow-hidden flex items-center justify-center text-3xl font-bold text-white bg-white relative ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}">
                                     ${avatarImage 
@@ -982,7 +1052,6 @@
                         </div>
                         
                         <div class="px-6 pb-6 pt-16 relative text-center">
-                            <!-- Action Button (Absolute to top-right of content area if needed, or kept in banner) -->
                             ${isMe && !isEditingProfile ? `
                                 <button id="editProfileBtn" class="absolute top-4 right-6 px-4 py-1.5 rounded-full border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">
                                     Edit Profile
@@ -991,10 +1060,10 @@
 
                             <div>
                                 ${isEditingProfile ? `
-                                    <div class="mb-4 text-left">
-                                        <label class="text-[10px] font-bold text-gray-500 uppercase">Username</label>
-                                        <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full mt-1 border rounded p-2 text-sm font-bold focus:border-blue-500 outline-none" autocomplete="off">
-                                        <p id="editProfileError" class="text-red-500 text-xs mt-1 hidden"></p>
+                                    <div class="mb-4 text-left bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                        <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Current Display Name</label>
+                                        <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm font-bold text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none transition-all" autocomplete="off" placeholder="Enter username...">
+                                        <p id="editProfileError" class="text-red-500 text-xs mt-1 font-semibold hidden"></p>
                                     </div>
                                 ` : `
                                     <div class="flex items-center justify-center space-x-2">
@@ -1002,7 +1071,6 @@
                                     </div>
                                 `}
 
-                                <!-- Rank Badge Under Name -->
                                 <div class="mt-2 flex justify-center">
                                      <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${role.bg} ${role.color} border ${role.border} uppercase tracking-wide">
                                         <i data-lucide="${role.icon}" class="w-3.5 h-3.5 mr-1.5 ${role.fill}"></i> ${role.label}
@@ -1034,70 +1102,118 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
+        function getMessageHTML(msg, isMe, safeName) {
+            let cleanHtml = '';
+            if (window.marked && window.DOMPurify) { 
+                try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text || '')); } 
+                catch (e) { cleanHtml = escapeHtml(msg.text || ''); } 
+            } else { cleanHtml = escapeHtml(msg.text || ''); }
+            
+            // Image handling
+            let imageHtml = '';
+            if (msg.image) {
+                imageHtml = `<img src="${msg.image}" class="chat-image" alt="attachment" onclick="window.open(this.src, '_blank')">`;
+            }
+
+            // Avatar check
+            let avatarSrc = null;
+            if(msg.senderId === currentUser.id) avatarSrc = currentUser.avatarImage;
+            else {
+                const online = onlineUsers.find(u => u.id === msg.senderId);
+                if(online) avatarSrc = online.avatarImage;
+            }
+            
+            const avatarHtml = avatarSrc 
+                ? `<img src="${avatarSrc}" class="h-7 w-7 rounded-full object-cover shadow-sm ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110 user-profile-trigger" data-user-id="${msg.senderId}">`
+                : `<div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">${safeName.substring(0, 2).toUpperCase()}</div>`;
+            
+            const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
+
+            return `
+                <div class="flex max-w-[90%] md:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
+                    ${avatarHtml}
+                    ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}"><button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button><button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div>` : ''}
+                    <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px]">
+                        ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
+                        ${imageHtml}
+                        <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
+                        <div class="flex items-center justify-end mt-0.5 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-0.5">
+                            ${msg.edited ? '<span class="text-[8px] italic">(edited)</span>' : ''}
+                            <span class="text-[9px]">${time}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Smart Diffing Render
         function renderChatMessages() {
             const list = document.getElementById('messagesList');
             if (!list) return;
             
             if (messages.length === 0) {
                 list.innerHTML = `<div class="flex h-full flex-col items-center justify-center text-center opacity-40"><div class="mb-4 rounded-full bg-gray-200 p-4"><i data-lucide="message-square-dashed" class="w-8 h-8"></i></div><h3 class="text-base font-medium">No messages</h3><p class="text-xs">Say hello!</p></div>`;
-            } else {
-                list.innerHTML = messages.map(msg => {
-                    const isMe = msg.senderId === currentUser.id;
-                    const date = new Date(msg.timestamp);
-                    const time = isNaN(date.getTime()) ? '...' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    const isEditing = editingMessageId === msg.id;
-                    const safeName = escapeHtml(msg.senderName);
-                    let cleanHtml = '';
-                    if (window.marked && window.DOMPurify) { try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text)); } catch (e) { cleanHtml = escapeHtml(msg.text); } } else { cleanHtml = escapeHtml(msg.text); }
-
-                    if (isEditing) {
-                        return `<div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3"><div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start"><div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10"><textarea class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea><div class="flex justify-end space-x-1"><button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button><button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button></div></div></div></div>`;
-                    }
-
-                    // Avatar check for chat bubbles (requires user data lookup or embedding avatar in message - embedding is easier for no-sql but heavier. 
-                    // ideally we lookup. For now, we fallback to senderColor which is embedded. 
-                    // To show images in chat, we would need to fetch user profiles or embed avatarUrl in message. 
-                    // Given the constraints, I'll assume we want to see them if we have them locally, 
-                    // but since message object only has senderColor/senderName, we'd need to fetch or store avatar in message.
-                    // Storing in message is easier for this 'simple' app context.)
-                    // *Self-Correction*: The prompt didn't ask to store avatars in messages, but profile pictures usually appear there.
-                    // For a "Simple" app, I won't re-architect the message schema to include base64 strings (too big).
-                    // I'll leave the chat bubbles using Initials/Colors to prevent database explosion, 
-                    // BUT I will add a dynamic lookup if the user is in the `onlineUsers` list or `currentUser` to show the image if available immediately.
-                    
-                    let avatarSrc = null;
-                    if(msg.senderId === currentUser.id) avatarSrc = currentUser.avatarImage;
-                    else {
-                        const online = onlineUsers.find(u => u.id === msg.senderId);
-                        if(online) avatarSrc = online.avatarImage;
-                    }
-                    
-                    const avatarHtml = avatarSrc 
-                        ? `<img src="${avatarSrc}" class="h-7 w-7 rounded-full object-cover shadow-sm ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110 user-profile-trigger" data-user-id="${msg.senderId}">`
-                        : `<div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">${safeName.substring(0, 2).toUpperCase()}</div>`;
-
-                    return `
-                        <div class="flex w-full ${isMe ? 'justify-end' : 'justify-start'} group message-group">
-                            <div class="flex max-w-[90%] md:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
-                                ${avatarHtml}
-                                ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex space-x-1 z-10 ${isMe ? '-left-16 pr-1' : '-right-16 pl-1'}"><button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button><button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div>` : ''}
-                                <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px]">
-                                    ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
-                                    <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
-                                    <div class="flex items-center justify-end mt-0.5 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-0.5">
-                                        ${msg.edited ? '<span class="text-[8px] italic">(edited)</span>' : ''}
-                                        <span class="text-[9px]">${time}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                return;
             }
-            if(window.lucide) window.lucide.createIcons();
+
+            // Remove placeholder if present
+            if(list.querySelector('.text-center.opacity-40')) list.innerHTML = '';
+
+            const currentIds = new Set(messages.map(m => m.id));
+
+            // 1. Remove deleted messages
+            Array.from(list.children).forEach(child => {
+                 const id = child.id.replace('msg-', '');
+                 if (id && !currentIds.has(id)) {
+                     child.remove();
+                 }
+            });
+
+            // 2. Add or Update messages
+            messages.forEach(msg => {
+                const elId = `msg-${msg.id}`;
+                let el = document.getElementById(elId);
+                const isMe = msg.senderId === currentUser.id;
+                const safeName = escapeHtml(msg.senderName);
+                
+                // If editing this specific message, show edit UI (simple re-render for this case)
+                if (editingMessageId === msg.id) {
+                     if (!el) {
+                         el = document.createElement('div');
+                         el.id = elId;
+                         list.appendChild(el);
+                     }
+                     el.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3`;
+                     el.innerHTML = `<div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start"><div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10"><textarea class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea><div class="flex justify-end space-x-1"><button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button><button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button></div></div></div>`;
+                     return;
+                }
+
+                // Normal Message View
+                const contentHtml = getMessageHTML(msg, isMe, safeName);
+                
+                if (!el) {
+                    // Create New
+                    el = document.createElement('div');
+                    el.id = elId;
+                    el.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} group message-group`;
+                    el.innerHTML = contentHtml;
+                    el.dataset.ts = msg.timestamp;
+                    el.dataset.edited = msg.edited;
+                    list.appendChild(el);
+                    
+                    // Auto-scroll on new message
+                    setTimeout(() => list.scrollTop = list.scrollHeight, 50);
+                } else {
+                    // Update if changed
+                    if (el.dataset.ts != msg.timestamp || el.dataset.edited != msg.edited) {
+                        el.innerHTML = contentHtml;
+                        el.dataset.ts = msg.timestamp;
+                        el.dataset.edited = msg.edited;
+                    }
+                }
+            });
             
-            if (!editingMessageId && list.scrollTop + list.clientHeight >= list.scrollHeight - 150) { setTimeout(() => list.scrollTop = list.scrollHeight, 50); } 
-            else if (messages.length > 0 && list.scrollTop === 0) { setTimeout(() => list.scrollTop = list.scrollHeight, 100); }
+            if(window.lucide) window.lucide.createIcons();
         }
 
         function updateTypingUI() {
