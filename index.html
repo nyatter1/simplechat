@@ -817,147 +817,6 @@
              } catch (e) { console.error(e); }
         }
 
-        // ... existing auth, profile functions ...
-        
-        // --- ACTIONS ---
-        async function toggleReaction(msgId, emoji) {
-            const msg = messages.find(m => m.id === msgId);
-            if (!msg) return;
-            
-            const reactions = msg.reactions || {};
-            let users = reactions[emoji] || [];
-            
-            if (users.includes(currentUser.id)) {
-                users = users.filter(id => id !== currentUser.id);
-            } else {
-                users.push(currentUser.id);
-            }
-            
-            const updates = { [`reactions.${emoji}`]: users };
-            await updateDoc(doc(db, "messages", msgId), updates);
-        }
-
-        async function openProfileModal(userId) {
-            viewingProfileId = userId;
-            showProfileModal = true;
-            isEditingProfile = false;
-            viewingProfileData = null;
-            renderProfileModal();
-
-            try {
-                const docSnap = await getDoc(doc(db, "users", userId));
-                if (docSnap.exists()) {
-                    viewingProfileData = docSnap.data();
-                    if (!viewingProfileData.role) viewingProfileData.role = 'vip';
-                    if (!viewingProfileData.banner) viewingProfileData.banner = getRoleConfig(viewingProfileData.role).gradient;
-                    // Ensure likedBy exists
-                    if (!viewingProfileData.likedBy) viewingProfileData.likedBy = [];
-                    
-                    // Init YouTube Player if ID exists
-                    if (viewingProfileData.youtubeId && window.YT) {
-                        setTimeout(() => {
-                            if(document.getElementById('hidden-player')) {
-                                player = new YT.Player('hidden-player', {
-                                    height: '1', width: '1', // Must be 1x1 to render to allow playback
-                                    videoId: viewingProfileData.youtubeId,
-                                    playerVars: { 
-                                        'autoplay': 1, 
-                                        'playsinline': 1,
-                                        'controls': 0,
-                                        'disablekb': 1
-                                    },
-                                    events: {
-                                        'onReady': (event) => {
-                                            isPlayerReady = true;
-                                            event.target.unMute();
-                                            event.target.playVideo();
-                                            isMusicPlaying = true;
-                                            renderProfileModal();
-                                        },
-                                        'onStateChange': (event) => {
-                                            if (event.data === YT.PlayerState.PLAYING) isMusicPlaying = true;
-                                            else isMusicPlaying = false;
-                                            renderProfileModal();
-                                        }
-                                    }
-                                });
-                            }
-                        }, 100);
-                    }
-                } else {
-                    viewingProfileData = { username: 'Unknown', color: 'bg-gray-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [] };
-                }
-            } catch (e) {
-                console.error("Error fetching profile", e);
-                viewingProfileData = { username: 'Error', color: 'bg-red-500', role: 'vip', banner: BANNER_GRADIENTS[0], likedBy: [] };
-            }
-            renderProfileModal();
-        }
-
-        async function saveProfile() {
-            // ... existing save logic ...
-            const newName = document.getElementById('editUsernameInput').value.trim();
-            const status = document.getElementById('editStatusInput').value.trim();
-            const youtubeLink = document.getElementById('editYoutubeInput').value.trim();
-            const age = document.getElementById('editAgeInput').value.trim();
-            const gender = document.getElementById('editGenderInput').value.trim();
-            const errorEl = document.getElementById('editProfileError');
-            
-            if (!newName || newName.length < 2) {
-                errorEl.textContent = "Username too short.";
-                errorEl.classList.remove('hidden');
-                return;
-            }
-
-            if (newName.toLowerCase() !== currentUser.username.toLowerCase()) {
-                const q = query(collection(db, "users"), where("usernameLower", "==", newName.toLowerCase()));
-                const snap = await getDocs(q);
-                if (!snap.empty) {
-                    errorEl.textContent = "Username taken.";
-                    errorEl.classList.remove('hidden');
-                    return;
-                }
-            }
-
-            let yId = editProfileForm.youtubeId;
-            if (youtubeLink) {
-                const extracted = getYouTubeId(youtubeLink);
-                if (extracted) yId = extracted;
-                else if (youtubeLink.length === 11) yId = youtubeLink; 
-            } else if (youtubeLink === '') {
-                yId = '';
-            }
-
-            try {
-                const updateData = {
-                    username: newName,
-                    usernameLower: newName.toLowerCase(),
-                    avatarImage: editProfileForm.avatarImage,
-                    bannerImage: editProfileForm.bannerImage,
-                    status: status,
-                    youtubeId: yId,
-                    age: age,
-                    gender: gender
-                };
-                
-                if(editProfileForm.color) updateData.color = editProfileForm.color;
-                if(editProfileForm.banner) updateData.banner = editProfileForm.banner;
-
-                await updateDoc(doc(db, "users", currentUser.id), updateData);
-                
-                currentUser = { ...currentUser, ...updateData };
-                viewingProfileData = { ...viewingProfileData, ...updateData };
-                isEditingProfile = false;
-                renderProfileModal();
-                renderSidebar(); 
-
-            } catch(e) {
-                console.error(e);
-                errorEl.textContent = "Failed to save.";
-                errorEl.classList.remove('hidden');
-            }
-        }
-
         // --- RENDERERS ---
 
         function render() {
@@ -976,8 +835,10 @@
         }
 
         function renderLogin(container) {
-             // ... existing login code ...
+            // Check if already authenticated to prevent flash
             if(auth.currentUser && currentUser) return; 
+
+            // Defaults to 'login' view, but can switch to 'signup'
             let view = 'login'; 
 
             const renderForm = () => {
@@ -1041,6 +902,7 @@
                     </div>
                 `;
                 
+                // Re-attach listeners
                 document.getElementById('tabLogin').onclick = () => { view = 'login'; renderForm(); };
                 document.getElementById('tabSignup').onclick = () => { view = 'signup'; renderForm(); };
                 document.getElementById('authForm').onsubmit = handleAuth;
@@ -1069,14 +931,18 @@
                         const snap = await getDocs(q);
                         if (!snap.empty) throw new Error("Username already taken.");
 
+                        // Create Auth User
                         const cred = await createUserWithEmailAndPassword(auth, email, pass);
                         const userId = cred.user.uid;
 
+                        // Initial Role Logic: If username is 'developerr', assign dev role.
+                        // This persists in DB even if username changes later.
                         let role = 'vip';
                         if (username.toLowerCase() === 'developerr') role = 'developer';
                         const roleConfig = getRoleConfig(role);
                         const color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
+                        // Create Firestore Doc
                         await setDoc(doc(db, "users", userId), {
                             username,
                             usernameLower: username.toLowerCase(),
@@ -1091,7 +957,9 @@
                             lastSeen: serverTimestamp()
                         });
 
+                        // CurrentUser will be set by onAuthStateChanged
                     } else {
+                        // Sign In
                         await signInWithEmailAndPassword(auth, email, pass);
                     }
                 } catch (error) {
@@ -1105,6 +973,7 @@
                     btn.disabled = false;
                 }
             };
+
             renderForm();
         }
 
@@ -1182,7 +1051,7 @@
                     <div id="inboxModalContainer"></div>
                 </div>
             `;
-            // ... existing listeners ...
+
             renderSidebar();
             renderRightSidebar();
 
@@ -1200,6 +1069,7 @@
             document.getElementById('logoutBtn').addEventListener('click', () => {
                 signOut(auth).then(() => {
                     localStorage.removeItem('chat_user');
+                    // onAuthStateChanged will handle the rest
                 });
             });
 
@@ -1207,8 +1077,9 @@
             const messageInput = document.getElementById('messageInput');
 
             messageInput.addEventListener('input', (e) => {
-                // ... existing input logic
                 const val = e.target.value;
+                
+                // Typing Indicator logic
                 if (val.trim()) {
                     const now = Date.now();
                     if (now - lastTypingSent > 2500) {
@@ -1220,15 +1091,24 @@
                         lastTypingSent = now;
                     }
                 }
+                
+                // Mention Logic
                 const lastAt = val.lastIndexOf('@');
                 if (lastAt !== -1) {
                     const query = val.substring(lastAt + 1);
+                    // Check if there's a space after @, if so, stop suggesting
                     if (!query.includes(' ')) {
                         mentionQuery = query.toLowerCase();
                         mentionIndex = lastAt + 1;
                         renderMentionDropdown();
-                    } else { mentionQuery = null; renderMentionDropdown(); }
-                } else { mentionQuery = null; renderMentionDropdown(); }
+                    } else {
+                        mentionQuery = null;
+                        renderMentionDropdown();
+                    }
+                } else {
+                    mentionQuery = null;
+                    renderMentionDropdown();
+                }
             });
 
             messageForm.addEventListener('submit', async (e) => {
@@ -1254,12 +1134,40 @@
                         timestamp: serverTimestamp(),
                         edited: false
                     });
-                } catch (err) { console.error("Error sending", err); }
+                } catch (err) {
+                    console.error("Error sending", err);
+                }
             });
+            
             renderChatMessages();
         }
 
-        // ... renderMentionDropdown, renderRightSidebar ...
+        function renderMentionDropdown() {
+            const dropdown = document.getElementById('mentionDropdown');
+            if (!dropdown) return;
+
+            if (!mentionQuery && mentionQuery !== '') {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            const matches = onlineUsers.filter(u => u.username.toLowerCase().startsWith(mentionQuery));
+            if (matches.length === 0) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            dropdown.innerHTML = matches.map(u => `
+                <div class="mention-item flex items-center p-2 hover:bg-gray-100 cursor-pointer" data-username="${u.username}">
+                     <div class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold mr-2 ${u.color}">
+                        ${u.username.substring(0,2).toUpperCase()}
+                     </div>
+                     <span class="text-sm font-medium text-gray-800">${u.username}</span>
+                </div>
+            `).join('');
+            dropdown.classList.remove('hidden');
+        }
+
         function renderSidebar() {
             const container = document.getElementById('sidebarContent');
             if (!container) return;
@@ -1314,32 +1222,129 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
-        // ... renderThemeModal ...
+        function renderRightSidebar() {
+            const container = document.getElementById('onlineUsersList');
+            if (!container) return;
+            
+            if (onlineUsers.length === 0) {
+                container.innerHTML = '<div class="p-3 text-center opacity-50 text-xs italic">Looking for users...</div>';
+                return;
+            }
+
+            container.innerHTML = onlineUsers.map(u => {
+                const role = getRoleConfig(u.role);
+                const avatarHtml = u.avatarImage 
+                    ? `<img src="${u.avatarImage}" class="h-8 w-8 rounded-full object-cover shadow-sm">`
+                    : `<div class="flex h-8 w-8 items-center justify-center rounded-full text-white font-bold shadow-sm ${u.color || 'bg-gray-500'} text-xs">${escapeHtml(u.username).substring(0, 2).toUpperCase()}</div>`;
+                
+                // Rank Badge HTML
+                const rankBadge = `<span class="ml-1 inline-flex items-center justify-center rounded-full ${role.bg} p-0.5 border ${role.border}" title="${role.label}"><i data-lucide="${role.icon}" class="w-3 h-3 ${role.color} ${role.fill}"></i></span>`;
+
+                return `
+                <div class="user-profile-trigger flex items-center p-2 mb-1 hover:bg-black/5 rounded-lg transition-colors cursor-pointer group" data-user-id="${u.id}">
+                   <div class="relative shrink-0">
+                      ${avatarHtml}
+                      <div class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 border-2 border-white ring-1 ring-gray-100"></div>
+                   </div>
+                   <div class="ml-2.5 min-w-0 flex-1 overflow-hidden">
+                      <div class="flex items-center">
+                          <p class="text-xs font-semibold truncate max-w-[100px] ${u.id === currentUser.id ? 'theme-text-primary' : 'theme-text-main'}">
+                              ${escapeHtml(u.username)}
+                          </p>
+                          ${rankBadge}
+                      </div>
+                      ${u.status ? `<p class="text-[10px] text-gray-500 truncate">"${escapeHtml(u.status)}"</p>` : `<p class="text-[9px] text-green-600 font-medium">Online</p>`}
+                   </div>
+                </div>
+            `}).join('');
+            
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function renderThemeModal() {
+            const container = document.getElementById('themeModalContainer');
+            if (!container) return;
+
+            if (!showThemeModal) { container.innerHTML = ''; return; }
+
+            const t = themes.find(x => x.id === previewThemeId) || themes[0];
+            const previewStyle = `
+                --primary: ${t.primary};
+                --bg-app: ${t.bgApp};
+                --bg-sidebar: ${t.bgSidebar};
+                --text-main: ${t.text};
+                --msg-bubble-me: ${t.primary};
+                --msg-text-me: #ffffff;
+                --border-color: ${t.borderColor};
+            `;
+
+            container.innerHTML = `
+                <div id="themeOverlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm">
+                    <div class="w-full max-w-5xl h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-[fadeIn_0.2s_ease-out]">
+                        <div class="p-4 border-b flex justify-between items-center bg-gray-50 shrink-0">
+                            <div><h2 class="text-lg font-bold text-gray-900">Choose a Theme</h2><p class="text-xs text-gray-500">Preview before you apply</p></div>
+                            <div class="flex items-center space-x-2">
+                                <button id="applyThemeBtn" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-colors">Apply Theme</button>
+                                <button id="closeThemeBtn" class="p-2 hover:bg-gray-200 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-gray-600"></i></button>
+                            </div>
+                        </div>
+                        <div class="flex flex-1 overflow-hidden">
+                            <div class="w-1/3 border-r bg-gray-100 hidden md:flex flex-col p-4 overflow-hidden relative">
+                                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center">Live Preview</h3>
+                                <div class="flex-1 rounded-xl shadow-lg flex flex-col overflow-hidden border theme-scope relative" style="${previewStyle}">
+                                    <div class="h-10 border-b theme-bg-sidebar flex items-center px-3 space-x-2 shrink-0">
+                                        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div><div class="w-2.5 h-2.5 rounded-full bg-yellow-400"></div><div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+                                    </div>
+                                    <div class="flex-1 p-3 space-y-3 overflow-hidden theme-bg-app relative">
+                                        <div class="flex items-end"><div class="w-6 h-6 rounded-full bg-indigo-500 mr-2 shrink-0"></div><div class="theme-bg-sidebar p-2 rounded-xl rounded-tl-none border shadow-sm text-xs max-w-[80%]"><p class="theme-text-main opacity-90">How does this look?</p></div></div>
+                                        <div class="flex flex-row-reverse items-end"><div class="theme-primary p-2 rounded-xl rounded-tr-none shadow-sm text-xs max-w-[80%] text-white"><p>Looks awesome! 😎</p></div></div>
+                                    </div>
+                                    <div class="h-12 theme-bg-sidebar border-t p-2 shrink-0"><div class="h-full rounded-full border opacity-50 mx-auto w-full"></div></div>
+                                </div>
+                                <div class="mt-4 text-center"><span class="text-sm font-bold text-gray-700">${t.name}</span></div>
+                            </div>
+                            <div class="flex-1 overflow-y-auto p-4 bg-white">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    ${themes.map(th => `
+                                        <button class="theme-option group relative flex flex-col rounded-lg border-2 p-1.5 transition-all hover:shadow-md ${previewThemeId === th.id ? 'border-blue-600 ring-1 ring-blue-100 bg-blue-50/50' : 'border-gray-100 hover:border-gray-300 bg-white'}" data-id="${th.id}">
+                                            <div class="w-full h-16 rounded mb-2 relative overflow-hidden shadow-sm border border-black/5" style="background-color: ${th.bgApp}"><div class="absolute left-0 top-0 bottom-0 w-1/4" style="background-color: ${th.bgSidebar}"></div><div class="absolute right-2 bottom-2 w-6 h-6 rounded-full shadow-sm" style="background-color: ${th.primary}"></div></div>
+                                            <span class="text-[10px] font-semibold text-gray-600 group-hover:text-gray-900 text-center">${th.name}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            if(window.lucide) window.lucide.createIcons();
+        }
 
         function renderProfileModal() {
             const container = document.getElementById('profileModalContainer');
             if (!container) return;
+
             if (!showProfileModal) { container.innerHTML = ''; return; }
 
             const data = viewingProfileData || { username: 'Loading...', color: 'bg-gray-200', role: 'vip', likedBy: [] };
             const role = getRoleConfig(data.role);
+            
+            const banner = isEditingProfile 
+                ? (editProfileForm.bannerImage ? `url(${editProfileForm.bannerImage})` : (editProfileForm.banner || getRoleConfig(viewingProfileData.role).gradient))
+                : (data.bannerImage ? `url(${data.bannerImage})` : (data.banner || role.gradient));
+                
+            const isBannerImage = (isEditingProfile && editProfileForm.bannerImage) || (!isEditingProfile && data.bannerImage);
+            const avatarImage = isEditingProfile ? editProfileForm.avatarImage : data.avatarImage;
+            const color = isEditingProfile ? editProfileForm.color : data.color;
+            const username = isEditingProfile ? editProfileForm.username : data.username;
+            const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
+            const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
             const isMe = currentUser && currentUser.id === viewingProfileId;
             const likedBy = data.likedBy || [];
             const isLiked = currentUser && likedBy.includes(currentUser.id);
             const likeCount = likedBy.length;
-            
-            // ... (rest of profile rendering logic remains same, just adding buttons)
-             const banner = isEditingProfile 
-                ? (editProfileForm.bannerImage ? `url(${editProfileForm.bannerImage})` : (editProfileForm.banner || getRoleConfig(viewingProfileData.role).gradient))
-                : (data.bannerImage ? `url(${data.bannerImage})` : (data.banner || role.gradient));
-             const isBannerImage = (isEditingProfile && editProfileForm.bannerImage) || (!isEditingProfile && data.bannerImage);
-             const avatarImage = isEditingProfile ? editProfileForm.avatarImage : data.avatarImage;
-             const color = isEditingProfile ? editProfileForm.color : data.color;
-             const username = isEditingProfile ? editProfileForm.username : data.username;
-             const joinDate = data.joinedAt ? formatDate(data.joinedAt) : 'Unknown';
-             const lastSeen = data.lastSeen ? new Date(data.lastSeen.toMillis ? data.lastSeen.toMillis() : data.lastSeen).toLocaleString() : 'Never';
-             const bannerStyle = isBannerImage ? `background-image: ${banner}; background-size: cover; background-position: center;` : '';
-             const bannerClass = isBannerImage ? `h-32 relative bg-gray-200` : `h-32 bg-gradient-to-r ${banner} relative`;
+            const bannerStyle = isBannerImage ? `background-image: ${banner}; background-size: cover; background-position: center;` : '';
+            const bannerClass = isBannerImage ? `h-32 relative bg-gray-200` : `h-32 bg-gradient-to-r ${banner} relative`;
 
             container.innerHTML = `
                 <div id="profileOverlay" class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
@@ -1347,7 +1352,7 @@
                         <button id="closeProfileBtn" class="absolute top-4 right-4 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-full text-white transition-colors">
                             <i data-lucide="x" class="w-5 h-5"></i>
                         </button>
-                        
+
                         <div id="${isEditingProfile ? 'editBannerTrigger' : ''}" class="rounded-t-3xl ${bannerClass} ${isEditingProfile ? 'cursor-pointer hover:opacity-90 group' : ''}" style="${bannerStyle}">
                              ${isEditingProfile ? '<div class="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-t-3xl"><i data-lucide="image" class="text-white w-8 h-8 drop-shadow-lg"></i></div>' : ''}
                              <div class="absolute left-1/2 -translate-x-1/2 -bottom-12">
@@ -1362,6 +1367,7 @@
                         </div>
                         
                         <div class="px-6 pb-6 pt-16 relative text-center">
+                            <!-- Hidden YouTube Player Container (Opacity 0 to allow playback) -->
                             <div id="hidden-player" class="absolute opacity-0 pointer-events-none w-1 h-1 overflow-hidden"></div>
                         
                             ${(!isEditingProfile && data.youtubeId) ? `
@@ -1372,7 +1378,16 @@
                                         </div>
                                         <div class="text-left">
                                             <p class="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">Profile Anthem</p>
-                                            <p class="text-xs font-bold text-white flex items-center space-x-1"><span>YouTube Music</span>${isMusicPlaying ? `<span class="flex space-x-0.5 items-end h-3"><span class="w-0.5 bg-green-400 eq-bar"></span><span class="w-0.5 bg-green-400 eq-bar"></span><span class="w-0.5 bg-green-400 eq-bar"></span></span>` : ''}</p>
+                                            <p class="text-xs font-bold text-white flex items-center space-x-1">
+                                                <span>YouTube Music</span>
+                                                ${isMusicPlaying ? `
+                                                    <span class="flex space-x-0.5 items-end h-3">
+                                                        <span class="w-0.5 bg-green-400 eq-bar"></span>
+                                                        <span class="w-0.5 bg-green-400 eq-bar"></span>
+                                                        <span class="w-0.5 bg-green-400 eq-bar"></span>
+                                                    </span>
+                                                ` : ''}
+                                            </p>
                                         </div>
                                     </div>
                                     <button id="toggleMusicBtn" class="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
@@ -1382,23 +1397,49 @@
                             ` : ''}
 
                             ${isMe && !isEditingProfile ? `
-                                <button id="editProfileBtn" class="absolute top-4 right-6 px-4 py-1.5 rounded-full border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">Edit Profile</button>
+                                <button id="editProfileBtn" class="absolute top-4 right-6 px-4 py-1.5 rounded-full border border-gray-300 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors">
+                                    Edit Profile
+                                </button>
                             ` : ''}
 
                             <div>
                                 ${isEditingProfile ? `
                                     <div class="space-y-4 text-left">
-                                        <!-- Edit Inputs ... (Same as before) -->
                                         <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
                                             <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Display Name</label>
                                             <input id="editUsernameInput" type="text" value="${escapeHtml(editProfileForm.username)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm font-bold text-gray-900 outline-none" autocomplete="off" placeholder="Enter username...">
                                         </div>
+                                        
                                         <div class="grid grid-cols-2 gap-2">
-                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200"><label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Age</label><input id="editAgeInput" type="number" value="${escapeHtml(editProfileForm.age)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none"></div>
-                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200"><label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Gender</label><select id="editGenderInput" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none"><option value="" ${editProfileForm.gender===''?'selected':''}>Select</option><option value="Male" ${editProfileForm.gender==='Male'?'selected':''}>Male</option><option value="Female" ${editProfileForm.gender==='Female'?'selected':''}>Female</option><option value="Non-binary" ${editProfileForm.gender==='Non-binary'?'selected':''}>Non-binary</option><option value="Other" ${editProfileForm.gender==='Other'?'selected':''}>Other</option></select></div>
+                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Age</label>
+                                                <input id="editAgeInput" type="number" value="${escapeHtml(editProfileForm.age)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="Age">
+                                            </div>
+                                            <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Gender</label>
+                                                <select id="editGenderInput" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none">
+                                                    <option value="" ${editProfileForm.gender === '' ? 'selected' : ''}>Select</option>
+                                                    <option value="Male" ${editProfileForm.gender === 'Male' ? 'selected' : ''}>Male</option>
+                                                    <option value="Female" ${editProfileForm.gender === 'Female' ? 'selected' : ''}>Female</option>
+                                                    <option value="Non-binary" ${editProfileForm.gender === 'Non-binary' ? 'selected' : ''}>Non-binary</option>
+                                                    <option value="Other" ${editProfileForm.gender === 'Other' ? 'selected' : ''}>Other</option>
+                                                </select>
+                                            </div>
                                         </div>
-                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200"><label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Status</label><input id="editStatusInput" type="text" value="${escapeHtml(editProfileForm.status)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none"></div>
-                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200"><label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Profile Anthem (YouTube)</label><div class="flex items-center space-x-2"><i data-lucide="youtube" class="w-4 h-4 text-red-600"></i><input id="editYoutubeInput" type="text" value="${escapeHtml(editProfileForm.youtubeId)}" class="flex-1 bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none"></div></div>
+
+                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Custom Status</label>
+                                            <input id="editStatusInput" type="text" value="${escapeHtml(editProfileForm.status)}" class="w-full bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="What's on your mind?">
+                                        </div>
+
+                                        <div class="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                            <label class="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Profile Anthem (YouTube)</label>
+                                            <div class="flex items-center space-x-2">
+                                                <i data-lucide="youtube" class="w-4 h-4 text-red-600"></i>
+                                                <input id="editYoutubeInput" type="text" value="${escapeHtml(editProfileForm.youtubeId)}" class="flex-1 bg-white border border-gray-300 rounded p-2 text-sm text-gray-700 outline-none" autocomplete="off" placeholder="Paste YouTube Link or ID">
+                                            </div>
+                                            <p class="text-[9px] text-gray-400 mt-1">Plays automatically when people visit your profile.</p>
+                                        </div>
                                         <p id="editProfileError" class="text-red-500 text-xs font-semibold hidden"></p>
                                     </div>
                                 ` : `
@@ -1410,7 +1451,7 @@
                                             ${data.age && data.gender ? '<span>•</span>' : ''}
                                             ${data.gender ? `<span>${escapeHtml(data.gender)}</span>` : ''}
                                         </div>
-                                        
+
                                         ${!isMe ? `
                                             <div class="flex items-center justify-center space-x-4 mt-4 mb-2">
                                                 <button id="profileLikeBtn" class="flex flex-col items-center group">
@@ -1467,7 +1508,7 @@
             `;
             if(window.lucide) window.lucide.createIcons();
         }
-        
+
         function renderInboxModal() {
             const container = document.getElementById('inboxModalContainer');
             if (!container) return;
@@ -1606,4 +1647,177 @@
             if(window.lucide) window.lucide.createIcons();
         }
 
-        // ... existing diff render ...
+        function getMessageHTML(msg, isMe, safeName) {
+            let cleanHtml = '';
+            if (window.marked && window.DOMPurify) { 
+                try { cleanHtml = window.DOMPurify.sanitize(window.marked.parse(msg.text || '')); } 
+                catch (e) { cleanHtml = escapeHtml(msg.text || ''); } 
+            } else { cleanHtml = escapeHtml(msg.text || ''); }
+            
+            cleanHtml = cleanHtml.replace(/(@\w+)/g, (match) => {
+                const mentionedName = match.substring(1).toLowerCase();
+                const isMeMentioned = mentionedName === currentUser.username.toLowerCase();
+                if (isMeMentioned) {
+                    return `<span class="mention-me">${match}</span>`;
+                }
+                return `<span class="mention">${match}</span>`;
+            });
+
+            // Image handling
+            let imageHtml = '';
+            if (msg.image) {
+                imageHtml = `<img src="${msg.image}" class="chat-image" alt="attachment" onclick="window.open(this.src, '_blank')">`;
+            }
+
+            let avatarSrc = null;
+            if(msg.senderId === currentUser.id) avatarSrc = currentUser.avatarImage;
+            else {
+                const online = onlineUsers.find(u => u.id === msg.senderId);
+                if(online) avatarSrc = online.avatarImage;
+            }
+            
+            const avatarHtml = avatarSrc 
+                ? `<img src="${avatarSrc}" class="h-7 w-7 rounded-full object-cover shadow-sm ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110 user-profile-trigger" data-user-id="${msg.senderId}">`
+                : `<div class="user-profile-trigger flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white shadow-sm ${msg.senderColor || 'bg-gray-500'} ${isMe ? 'ml-2' : 'mr-2'} mb-1 cursor-pointer transition-transform hover:scale-110" data-user-id="${msg.senderId}">${safeName.substring(0, 2).toUpperCase()}</div>`;
+            
+            const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...';
+            const isMentionedContainer = msg.text.toLowerCase().includes(`@${currentUser.username.toLowerCase()}`);
+            const containerStyle = isMentionedContainer ? 'ring-2 ring-yellow-300 bg-yellow-50/10' : '';
+
+            // Reactions Rendering
+            let reactionsHtml = '';
+            if (msg.reactions) {
+                const pills = [];
+                for (const [emoji, users] of Object.entries(msg.reactions)) {
+                    if (users && users.length > 0) {
+                        const isActive = users.includes(currentUser.id);
+                        pills.push(`
+                            <button class="reaction-pill reaction-btn-trigger ${isActive ? 'active' : ''}" data-id="${msg.id}" data-emoji="${emoji}">
+                                ${emoji} <span class="ml-1 opacity-70 font-semibold">${users.length}</span>
+                            </button>
+                        `);
+                    }
+                }
+                if (pills.length > 0) {
+                    reactionsHtml = `<div class="flex flex-wrap mt-1.5 -ml-1">${pills.join('')}</div>`;
+                }
+            }
+
+            // Reaction Menu in Actions
+            const reactionMenuHtml = REACTIONS_LIST.map(e => `
+                <button class="reaction-btn-trigger p-1 hover:scale-125 transition-transform" data-id="${msg.id}" data-emoji="${e}">${e}</button>
+            `).join('');
+
+            return `
+                <div class="flex max-w-[90%] md:max-w-[75%] ${isMe ? 'flex-row-reverse' : 'flex-row'} relative items-end">
+                    ${avatarHtml}
+                    ${isMe ? `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex items-center space-x-1 z-10 ${isMe ? '-left-auto right-full pr-2' : '-right-auto left-full pl-2'}">
+                        <div class="flex bg-white border border-gray-200 rounded-full shadow-sm px-1 py-0.5 mr-2 space-x-0.5">${reactionMenuHtml}</div>
+                        <button class="btn-start-edit p-1 text-gray-500 hover:text-blue-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-blue-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="pencil" class="w-3 h-3"></i></button>
+                        <button class="btn-delete p-1 text-gray-500 hover:text-red-600 rounded-full bg-white shadow-sm border border-gray-200 hover:border-red-300 transition-all hover:scale-110" data-id="${msg.id}"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+                    </div>` 
+                    : `<div class="msg-actions absolute top-1/2 -translate-y-1/2 flex items-center space-x-1 z-10 -right-auto left-full pl-2">
+                        <div class="flex bg-white border border-gray-200 rounded-full shadow-sm px-1 py-0.5 space-x-0.5">${reactionMenuHtml}</div>
+                    </div>`}
+                    
+                    <div class="relative rounded-xl px-3 py-2 shadow-sm ${isMe ? 'rounded-tr-none bubble-me bg-me' : 'rounded-tl-none bubble-other'} min-w-[50px] ${containerStyle}">
+                        ${!isMe ? `<p class="user-profile-trigger mb-0.5 text-[9px] font-bold opacity-60 uppercase tracking-wide cursor-pointer hover:underline" data-user-id="${msg.senderId}">${safeName}</p>` : ''}
+                        ${imageHtml}
+                        <div class="markdown-content text-xs md:text-sm leading-relaxed break-words">${cleanHtml}</div>
+                        ${reactionsHtml}
+                        <div class="flex items-center justify-end mt-0.5 space-x-1 opacity-60 border-t ${isMe ? 'border-white/20' : 'border-black/5'} pt-0.5">
+                            ${msg.edited ? '<span class="text-[8px] italic">(edited)</span>' : ''}
+                            <span class="text-[9px]">${time}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Smart Diffing Render
+        function renderChatMessages() {
+            const list = document.getElementById('messagesList');
+            if (!list) return;
+            
+            if (messages.length === 0) {
+                list.innerHTML = `<div class="flex h-full flex-col items-center justify-center text-center opacity-40"><div class="mb-4 rounded-full bg-gray-200 p-4"><i data-lucide="message-square-dashed" class="w-8 h-8"></i></div><h3 class="text-base font-medium">No messages</h3><p class="text-xs">Say hello!</p></div>`;
+                return;
+            }
+
+            // Remove placeholder if present
+            if(list.querySelector('.text-center.opacity-40')) list.innerHTML = '';
+
+            const currentIds = new Set(messages.map(m => m.id));
+            let addedNewMessage = false;
+
+            // 1. Remove deleted messages
+            Array.from(list.children).forEach(child => {
+                 const id = child.id.replace('msg-', '');
+                 if (id && !currentIds.has(id)) {
+                     child.remove();
+                 }
+            });
+
+            // 2. Add or Update messages
+            messages.forEach(msg => {
+                const elId = `msg-${msg.id}`;
+                let el = document.getElementById(elId);
+                const isMe = msg.senderId === currentUser.id;
+                const safeName = escapeHtml(msg.senderName);
+                
+                // If editing this specific message, show edit UI (simple re-render for this case)
+                if (editingMessageId === msg.id) {
+                     if (!el) {
+                         el = document.createElement('div');
+                         el.id = elId;
+                         list.appendChild(el);
+                     }
+                     el.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} mb-3`;
+                     el.innerHTML = `<div class="flex max-w-[95%] md:max-w-[80%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-start"><div class="flex-1 min-w-0 bg-white rounded-lg border border-blue-200 p-2 shadow-lg z-10"><textarea class="edit-input w-full p-2 mb-1 text-xs border border-gray-200 rounded focus:border-blue-500 focus:outline-none text-gray-800 bg-gray-50 resize-none" rows="2" data-id="${msg.id}" autofocus>${escapeHtml(msg.text)}</textarea><div class="flex justify-end space-x-1"><button class="btn-cancel-edit text-[10px] px-2 py-1 text-gray-500 hover:bg-gray-100 rounded">Cancel</button><button class="btn-save-edit text-[10px] px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" data-id="${msg.id}">Save</button></div></div></div>`;
+                     return;
+                }
+
+                // Normal Message View
+                const contentHtml = getMessageHTML(msg, isMe, safeName);
+                
+                if (!el) {
+                    // Create New
+                    el = document.createElement('div');
+                    el.id = elId;
+                    el.className = `flex w-full ${isMe ? 'justify-end' : 'justify-start'} group message-group`;
+                    el.innerHTML = contentHtml;
+                    el.dataset.ts = msg.timestamp;
+                    el.dataset.edited = msg.edited;
+                    list.appendChild(el);
+                    addedNewMessage = true;
+                } else {
+                    // Update if changed
+                    el.innerHTML = contentHtml;
+                    el.dataset.ts = msg.timestamp;
+                    el.dataset.edited = msg.edited;
+                }
+            });
+            
+            // Auto-scroll on new message
+            if (addedNewMessage) {
+                 setTimeout(() => list.scrollTop = list.scrollHeight, 50);
+            }
+
+            if(window.lucide) window.lucide.createIcons();
+        }
+
+        function updateTypingUI() {
+            const indicator = document.getElementById('typingIndicator');
+            if (!indicator) return;
+            const now = Date.now();
+            const active = Object.values(typingUsers).filter(u => now - u.timestamp < 3000).map(u => escapeHtml(u.username));
+            if (active.length > 0) {
+                const text = active.length === 1 ? `${active[0]} is typing` : active.length === 2 ? `${active[0]} & ${active[1]} are typing` : `${active.length} people typing`;
+                indicator.innerHTML = `<span class="mr-1">${text}</span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span><span class="typing-dot inline-block w-1 h-1 bg-current rounded-full mx-[1px]"></span>`;
+            } else { indicator.innerHTML = ''; }
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
