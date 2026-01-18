@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SimpleConnect Chat</title>
+    <link id="appFavicon" rel="icon" href="https://unpkg.com/lucide-static@latest/icons/message-circle.svg">
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Icons -->
@@ -207,6 +208,20 @@
             'from-indigo-400 to-cyan-400',
             'from-fuchsia-500 to-purple-600'
         ];
+        
+        // --- LOGGING ---
+        async function logAction(type, details) {
+            try {
+                if(!currentUser) return;
+                await addDoc(collection(db, "logs"), {
+                    type: type, // 'message_delete', 'message_edit', 'rank_change', 'reaction', 'profile_update', 'bot_init'
+                    userId: currentUser.id,
+                    username: currentUser.username,
+                    details: details,
+                    timestamp: serverTimestamp()
+                });
+            } catch(e) { console.error("Logging failed", e); }
+        }
 
         // --- THEME GENERATOR ---
         function generateThemes() {
@@ -215,7 +230,7 @@
             });
 
             // Compact list of themes
-            const list = [
+            let list = [
                 t(0, 'Standard Blue', '#2563eb', '#f3f4f6', '#ffffff', '#111827'),
                 t(1, 'Dark Mode', '#3b82f6', '#0f172a', '#1e293b', '#f8fafc', '#334155', '#334155'),
                 t(2, 'Midnight', '#6366f1', '#111827', '#1f2937', '#f3f4f6', '#374151', '#374151'),
@@ -232,6 +247,55 @@
                 t(13, 'Bumblebee', '#facc15', '#18181b', '#27272a', '#fefce8', '#3f3f46', '#27272a'),
                 t(14, 'Superman', '#ef4444', '#1d4ed8', '#1e40af', '#ffffff', '#2563eb', '#1e3a8a'),
                 t(15, 'Cyberpunk', '#f472b6', '#0f172a', '#1e293b', '#2dd4bf', '#334155', '#334155'),
+                t(16, 'Rose Gold', '#e11d48', '#fff1f2', '#ffe4e6', '#881337'),
+                t(17, 'Ocean Breeze', '#06b6d4', '#ecfeff', '#cffafe', '#155e75'),
+                t(18, 'Sunset', '#f97316', '#fff7ed', '#ffedd5', '#9a3412'),
+                t(19, 'Lavender', '#8b5cf6', '#f5f3ff', '#ede9fe', '#5b21b6'),
+                t(20, 'Slate Dark', '#94a3b8', '#1e293b', '#334155', '#e2e8f0'),
+                t(21, 'Mint', '#34d399', '#ecfdf5', '#d1fae5', '#065f46'),
+                t(22, 'Peach', '#fb923c', '#fff7ed', '#ffedd5', '#9a3412'),
+                t(23, 'Coffee', '#78350f', '#fffbeb', '#fef3c7', '#451a03'),
+                t(24, 'Sky High', '#0ea5e9', '#f0f9ff', '#e0f2fe', '#075985'),
+                t(25, 'Royal', '#4f46e5', '#eef2ff', '#e0e7ff', '#312e81'),
+                t(26, 'Lemon', '#facc15', '#fefce8', '#fef9c3', '#854d0e'),
+                t(27, 'Ruby', '#dc2626', '#fef2f2', '#fee2e2', '#991b1b'),
+                t(28, 'Void', '#71717a', '#000000', '#09090b', '#d4d4d8'),
+                t(29, 'Neon Green', '#39ff14', '#111111', '#222222', '#39ff14'),
+                t(30, 'Hackerman', '#00ff00', '#0d0d0d', '#1a1a1a', '#00ff00'),
+                t(31, 'Pastel Pink', '#f9a8d4', '#fdf2f8', '#fce7f3', '#831843'),
+                t(32, 'Pastel Blue', '#93c5fd', '#eff6ff', '#dbeafe', '#1e3a8a'),
+                t(33, 'Pastel Purple', '#c4b5fd', '#f5f3ff', '#ede9fe', '#4c1d95'),
+                t(34, 'Monochrome', '#525252', '#ffffff', '#e5e5e5', '#171717'),
+                t(35, 'Sepia', '#b45309', '#fff7ed', '#ffedd5', '#78350f'),
+                t(36, 'Aqua', '#22d3ee', '#ecfeff', '#cffafe', '#164e63'),
+                t(37, 'Hot Pink', '#db2777', '#fdf2f8', '#fce7f3', '#831843'),
+                t(38, 'Lime', '#84cc16', '#f7fee7', '#ecfccb', '#365314'),
+                t(39, 'Emerald City', '#10b981', '#022c22', '#064e3b', '#d1fae5'),
+                t(40, 'Night Sky', '#6366f1', '#1e1b4b', '#312e81', '#e0e7ff'),
+                t(41, 'Cherry', '#be123c', '#fff1f2', '#ffe4e6', '#881337'),
+                t(42, 'Teal Dark', '#14b8a6', '#134e4a', '#115e59', '#ccfbf1'),
+                t(43, 'Orange Dark', '#f97316', '#431407', '#7c2d12', '#ffedd5'),
+                t(44, 'Indigo Dark', '#6366f1', '#312e81', '#3730a3', '#e0e7ff'),
+                t(45, 'Violet Dark', '#8b5cf6', '#4c1d95', '#5b21b6', '#ede9fe'),
+                t(46, 'Fuchsia Dark', '#d946ef', '#701a75', '#86198f', '#fae8ff'),
+                t(47, 'Rose Dark', '#f43f5e', '#881337', '#9f1239', '#ffe4e6'),
+                t(48, 'Slate Light', '#475569', '#f1f5f9', '#e2e8f0', '#0f172a'),
+                t(49, 'Zinc Light', '#52525b', '#f4f4f5', '#e4e4e7', '#18181b'),
+                t(50, 'Neutral Light', '#525252', '#f5f5f5', '#e5e5e5', '#171717'),
+                t(51, 'Stone Light', '#57534e', '#fafaf9', '#e7e5e4', '#1c1917'),
+                t(52, 'Red Light', '#dc2626', '#fef2f2', '#fee2e2', '#7f1d1d'),
+                t(53, 'Orange Light', '#ea580c', '#fff7ed', '#ffedd5', '#7c2d12'),
+                t(54, 'Amber Light', '#d97706', '#fffbeb', '#fef3c7', '#78350f'),
+                t(55, 'Yellow Light', '#ca8a04', '#fefce8', '#fef9c3', '#713f12'),
+                t(56, 'Lime Light', '#65a30d', '#f7fee7', '#ecfccb', '#3f6212'),
+                t(57, 'Green Light', '#16a34a', '#f0fdf4', '#dcfce7', '#14532d'),
+                t(58, 'Emerald Light', '#059669', '#ecfdf5', '#d1fae5', '#064e3b'),
+                t(59, 'Teal Light', '#0d9488', '#f0fdfa', '#ccfbf1', '#134e4a'),
+                t(60, 'Cyan Light', '#0891b2', '#ecfeff', '#cffafe', '#155e75'),
+                t(61, 'Sky Light', '#0284c7', '#f0f9ff', '#e0f2fe', '#0c4a6e'),
+                t(62, 'Blue Light', '#2563eb', '#eff6ff', '#dbeafe', '#1e3a8a'),
+                t(63, 'Indigo Light', '#4f46e5', '#eef2ff', '#e0e7ff', '#312e81'),
+                t(64, 'Violet Light', '#7c3aed', '#f5f3ff', '#ede9fe', '#5b21b6')
             ];
             return list;
         }
@@ -354,6 +418,9 @@
                 case 'special vip': return { label: 'Special VIP', icon: 'star', color: 'text-orange-500', fill: 'fill-orange-400', bg: 'bg-orange-50', border: 'border-orange-200', gradient: 'from-orange-400 to-red-400' };
                 case 'vip': return { label: 'VIP', icon: 'crown', color: 'text-yellow-600', fill: 'fill-yellow-500', bg: 'bg-yellow-50', border: 'border-yellow-200', gradient: 'from-yellow-300 to-orange-300' };
                 
+                // Bot
+                case 'bot': return { label: 'Bot', icon: 'bot', color: 'text-blue-500', fill: 'fill-blue-400', bg: 'bg-blue-50', border: 'border-blue-200', gradient: 'from-blue-500 to-cyan-500' };
+
                 // Default
                 default: return { label: 'Member', icon: 'user', color: 'text-gray-600', fill: 'fill-gray-400', bg: 'bg-gray-100', border: 'border-gray-200', gradient: 'from-gray-400 to-gray-500' };
             }
@@ -364,7 +431,7 @@
             const ranks = [
                 'developer', 'founder', 'head owner', 'owner', 'ceo', 'manager',
                 'super admin', 'admin', 'moderator', 'site helper',
-                'king', 'princess', 'legend', 'premium', 'special vip', 'vip', 
+                'bot', 'king', 'princess', 'legend', 'premium', 'special vip', 'vip', 
                 'verified member', 'butterfly', 'teddy', 'ghost'
             ];
             const idx = ranks.indexOf(r);
@@ -380,6 +447,18 @@
             const initTheme = storedTheme ? parseInt(storedTheme) : 0;
             applyTheme(initTheme);
             previewThemeId = initTheme;
+
+            // Global Settings Listener
+            onSnapshot(doc(db, "settings", "global"), (snap) => {
+                if (snap.exists()) {
+                    const d = snap.data();
+                    if (d.title) document.title = d.title;
+                    if (d.icon) document.getElementById('appFavicon').href = d.icon;
+                }
+            });
+
+            // Ensure Bot Exists
+            ensureBotExists();
 
             // Auth State Listener
             onAuthStateChanged(auth, async (user) => {
@@ -447,6 +526,29 @@
                 }
             });
         }
+        
+        async function ensureBotExists() {
+            const botId = 'simple_bot_uid';
+            try {
+                const docRef = doc(db, "users", botId);
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    await setDoc(docRef, {
+                        username: 'Simple Bot',
+                        usernameLower: 'simple bot',
+                        role: 'bot',
+                        color: 'bg-blue-500',
+                        status: 'I am a simple bot. I do nothing.',
+                        avatarImage: null,
+                        banner: 'from-blue-500 to-cyan-500',
+                        lastSeen: serverTimestamp(),
+                        joinedAt: serverTimestamp(),
+                        age: '100',
+                        gender: 'Bot'
+                    });
+                }
+            } catch (e) { console.error("Bot init failed", e); }
+        }
 
         async function updatePresenceAndMigration() {
             if (!currentUser) return;
@@ -490,8 +592,8 @@
                 const active = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    // Consider online if seen recently
-                    if (data.lastSeen && data.lastSeen.toMillis() > cutoff) {
+                    // Consider online if seen recently OR if it is the Bot
+                    if ((data.lastSeen && data.lastSeen.toMillis() > cutoff) || doc.id === 'simple_bot_uid') {
                         active.push({ id: doc.id, ...data });
                     }
                 });
@@ -632,6 +734,7 @@
 
             const deleteBtn = target.closest('.btn-delete');
             if (deleteBtn && confirm('Delete this message?')) {
+                await logAction('message_delete', `Deleted message ${deleteBtn.dataset.id}`);
                 await deleteDoc(doc(db, "messages", deleteBtn.dataset.id)); return;
             }
 
@@ -644,6 +747,7 @@
                 const input = document.querySelector(`.edit-input[data-id="${id}"]`);
                 if (input && input.value.trim()) {
                     await updateDoc(doc(db, "messages", id), { text: input.value.trim(), edited: true });
+                    await logAction('message_edit', `Edited message ${id}`);
                     editingMessageId = null;
                 }
                 return;
@@ -654,6 +758,10 @@
             if (target.closest('#applyThemeBtn')) { applyTheme(previewThemeId); showThemeModal = false; renderThemeModal(); }
             const themeOption = target.closest('.theme-option');
             if (themeOption) { previewThemeId = Number(themeOption.dataset.id); renderThemeModal(); }
+
+            if (target.closest('#adminPanelBtn')) {
+                window.location.href = 'admin.html';
+            }
         }
 
         async function toggleReaction(msgId, emoji) {
@@ -669,6 +777,8 @@
                 users.push(currentUser.id);
             }
             
+            await logAction('reaction', `Toggled ${emoji} on message ${msgId}`);
+
             const fieldPath = `reactions.${emoji}`;
             try {
                 await updateDoc(doc(db, "messages", msgId), {
@@ -800,6 +910,7 @@
                 if(editProfileForm.banner) updateData.banner = editProfileForm.banner;
 
                 await updateDoc(doc(db, "users", currentUser.id), updateData);
+                await logAction('profile_update', `Updated profile (name: ${newName})`);
                 
                 currentUser = { ...currentUser, ...updateData };
                 viewingProfileData = { ...viewingProfileData, ...updateData };
@@ -1135,6 +1246,7 @@
                             
                             if (count > 0) {
                                 await batch.commit();
+                                await logAction('message_delete_all', `Cleared ${count} messages`);
                                 showToast(`Cleared ${count} messages.`);
                             } else {
                                 showToast("Chat is already empty.");
@@ -1166,6 +1278,7 @@
                             const targetUser = snap.docs[0];
                             // Update user
                             await updateDoc(doc(db, "users", targetUser.id), { role: newRankStr.toLowerCase() });
+                            await logAction('rank_change', `Changed ${targetUser.data().username}'s rank to ${newRankStr}`);
                             showToast("Action complete");
                         } catch(err) { console.error(err); showToast("Error updating rank", 'error'); }
                         return;
@@ -1266,6 +1379,17 @@
                             <p class="text-[10px] opacity-60">Customization</p>
                         </div>
                     </button>
+                    ${currentUser.role === 'developer' ? `
+                    <button id="adminPanelBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 text-red-600">
+                        <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-100">
+                            <i data-lucide="shield-alert" class="w-3 h-3 text-red-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-xs">Panel</p>
+                            <p class="text-[10px] opacity-60">Developer Access</p>
+                        </div>
+                    </button>
+                    ` : ''}
                 </div>
             `;
             if(window.lucide) window.lucide.createIcons();
