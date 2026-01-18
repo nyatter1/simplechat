@@ -118,6 +118,9 @@
         @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-10px); } }
         .toast-item { animation: toast-in 0.3s ease-out forwards; }
         .toast-item.hiding { animation: toast-out 0.3s ease-in forwards; }
+        
+        /* Notification Dot */
+        .notif-dot { position: absolute; top: 0; right: 0; transform: translate(25%, -25%); width: 0.75rem; height: 0.75rem; background-color: #ef4444; border-radius: 9999px; border: 2px solid white; }
     </style>
     <!-- YouTube API -->
     <script src="https://www.youtube.com/iframe_api"></script>
@@ -159,13 +162,18 @@
         let messages = [];
         let typingUsers = {}; 
         let onlineUsers = [];
+        let notifications = [];
         let editingMessageId = null; 
         let lastTypingSent = 0;
         let pendingChatImage = null;
+        let showNotifications = false;
         
         // Mentions State
         let mentionQuery = null;
         let mentionIndex = -1;
+        
+        // Tracking to prevent spam notifications locally
+        let sessionViewedProfiles = new Set();
         
         // Music State (YouTube)
         let player = null;
@@ -221,6 +229,21 @@
                     timestamp: serverTimestamp()
                 });
             } catch(e) { console.error("Logging failed", e); }
+        }
+        
+        async function sendNotification(targetUserId, type, content) {
+            if (!currentUser || targetUserId === currentUser.id) return; // Don't notify self
+            try {
+                await addDoc(collection(db, "notifications"), {
+                    toUserId: targetUserId,
+                    type: type, // 'view', 'like', 'reaction', 'rank'
+                    content: content,
+                    fromUserId: currentUser.id,
+                    fromUsername: currentUser.username,
+                    read: false,
+                    timestamp: serverTimestamp()
+                });
+            } catch(e) { console.error("Failed to send notification", e); }
         }
 
         // --- THEME GENERATOR ---
@@ -624,6 +647,15 @@
                 updateTypingUI();
             });
             setInterval(updateTypingUI, 1000);
+            
+            // Notifications Listener
+            if (currentUser) {
+                const notifQ = query(collection(db, "notifications"), where("toUserId", "==", currentUser.id), orderBy("timestamp", "desc"), limit(20));
+                onSnapshot(notifQ, (snapshot) => {
+                    notifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderNotificationsPanel();
+                });
+            }
         }
 
         // --- ACTIONS ---
@@ -734,7 +766,9 @@
 
             const deleteBtn = target.closest('.btn-delete');
             if (deleteBtn && confirm('Delete this message?')) {
-                await logAction('message_delete', `Deleted message ${deleteBtn.dataset.id}`);
+                const msg = messages.find(m => m.id === deleteBtn.dataset.id);
+                const txt = msg ? msg.text : 'Unknown';
+                await logAction('message_delete', `Deleted message: "${txt}"`);
                 await deleteDoc(doc(db, "messages", deleteBtn.dataset.id)); return;
             }
 
@@ -746,8 +780,9 @@
                 const id = saveBtn.dataset.id;
                 const input = document.querySelector(`.edit-input[data-id="${id}"]`);
                 if (input && input.value.trim()) {
-                    await updateDoc(doc(db, "messages", id), { text: input.value.trim(), edited: true });
-                    await logAction('message_edit', `Edited message ${id}`);
+                    const newVal = input.value.trim();
+                    await updateDoc(doc(db, "messages", id), { text: newVal, edited: true });
+                    await logAction('message_edit', `Edited message to: "${newVal}"`);
                     editingMessageId = null;
                 }
                 return;
@@ -762,6 +797,28 @@
             if (target.closest('#adminPanelBtn')) {
                 window.location.href = 'admin.html';
             }
+            
+            if (target.closest('#notificationBtn')) {
+                showNotifications = !showNotifications;
+                const panel = document.getElementById('notificationPanel');
+                if (showNotifications) {
+                    panel.classList.remove('hidden');
+                    // Mark as read
+                    const unread = notifications.filter(n => !n.read);
+                    if (unread.length > 0) {
+                        const batch = writeBatch(db);
+                        unread.forEach(n => {
+                            batch.update(doc(db, "notifications", n.id), { read: true });
+                        });
+                        batch.commit();
+                    }
+                } else {
+                    panel.classList.add('hidden');
+                }
+            } else if (showNotifications && !target.closest('#notificationPanel')) {
+                showNotifications = false;
+                document.getElementById('notificationPanel').classList.add('hidden');
+            }
         }
 
         async function toggleReaction(msgId, emoji) {
@@ -775,9 +832,13 @@
                 users = users.filter(id => id !== currentUser.id);
             } else {
                 users.push(currentUser.id);
+                // Send Notification if reacting to someone else's message
+                if (msg.senderId !== currentUser.id) {
+                     await sendNotification(msg.senderId, 'reaction', `${currentUser.username} reacted ${emoji} to your message`);
+                }
             }
             
-            await logAction('reaction', `Toggled ${emoji} on message ${msgId}`);
+            await logAction('reaction', `Toggled ${emoji} on message: "${msg.text}"`);
 
             const fieldPath = `reactions.${emoji}`;
             try {
@@ -804,6 +865,8 @@
                         if (viewingProfileData) viewingProfileData.likedBy = likedBy.filter(id => id !== currentUser.id);
                     } else {
                         await updateDoc(userRef, { likedBy: arrayUnion(currentUser.id) });
+                        // Send Notification
+                        await sendNotification(targetUserId, 'like', `${currentUser.username} liked your profile`);
                         if (viewingProfileData) viewingProfileData.likedBy = [...likedBy, currentUser.id];
                     }
                     renderProfileModal();
@@ -817,6 +880,12 @@
             isEditingProfile = false;
             viewingProfileData = null;
             renderProfileModal();
+            
+            // Send Notification (Debounced by session)
+            if (userId !== currentUser.id && !sessionViewedProfiles.has(userId)) {
+                sessionViewedProfiles.add(userId);
+                await sendNotification(userId, 'view', `${currentUser.username} viewed your profile`);
+            }
 
             try {
                 const docSnap = await getDoc(doc(db, "users", userId));
@@ -1315,6 +1384,57 @@
             });
             
             renderChatMessages();
+            renderNotificationsPanel();
+        }
+
+        function renderNotificationsPanel() {
+            let container = document.getElementById('notificationPanel');
+            const unreadCount = notifications.filter(n => !n.read).length;
+            
+            // Update dot
+            const badge = document.getElementById('notifBadge');
+            if (badge) {
+                if (unreadCount > 0) {
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+
+            if (!container) {
+                // Should be created inside sidebar container, actually let's append it to the body or sidebar relative
+                // Since sidebar has overflow-y auto, it might clip. Let's make it a fixed overlay or append to specific place.
+                // Best place is inside the sidebar logic.
+                return;
+            }
+            
+            if (notifications.length === 0) {
+                container.innerHTML = `<div class="p-4 text-center opacity-50 text-xs italic">No notifications</div>`;
+                return;
+            }
+            
+            container.innerHTML = notifications.map(n => {
+                let icon = 'info';
+                let color = 'text-gray-500';
+                if (n.type === 'view') { icon = 'eye'; color = 'text-blue-500'; }
+                if (n.type === 'like') { icon = 'heart'; color = 'text-red-500'; }
+                if (n.type === 'reaction') { icon = 'smile'; color = 'text-orange-500'; }
+                if (n.type === 'rank') { icon = 'shield'; color = 'text-purple-500'; }
+                
+                const time = n.timestamp ? new Date(n.timestamp.toMillis()).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+
+                return `
+                <div class="flex items-start p-2 hover:bg-black/5 rounded-lg transition-colors mb-1 ${!n.read ? 'bg-blue-50/50' : ''}">
+                    <div class="mt-0.5 mr-2 ${color}"><i data-lucide="${icon}" class="w-3.5 h-3.5"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-gray-800 leading-snug">${escapeHtml(n.content)}</p>
+                        <p class="text-[10px] text-gray-400 mt-0.5">${time}</p>
+                    </div>
+                </div>
+                `;
+            }).join('');
+            
+            if(window.lucide) window.lucide.createIcons();
         }
 
         function renderMentionDropdown() {
@@ -1370,7 +1490,23 @@
 
                 <div class="mt-4">
                     <h3 class="mb-2 text-[10px] font-semibold uppercase tracking-wider opacity-50">Settings</h3>
-                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
+                    
+                    <button id="notificationBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20 relative">
+                        <div class="flex h-6 w-6 items-center justify-center rounded-full bg-red-50 text-red-500 relative">
+                            <i data-lucide="bell" class="w-3 h-3"></i>
+                            <span id="notifBadge" class="notif-dot hidden"></span>
+                        </div>
+                        <div>
+                            <p class="font-medium text-xs">Notifications</p>
+                            <p class="text-[10px] opacity-60">Activity & Alerts</p>
+                        </div>
+                    </button>
+                    <!-- Notification Panel (Hidden) -->
+                    <div id="notificationPanel" class="hidden mt-1 mx-1 bg-white border border-gray-200 shadow-inner rounded-lg p-1 max-h-48 overflow-y-auto">
+                        <div class="text-center p-2 text-xs text-gray-400">Loading...</div>
+                    </div>
+
+                    <button id="themeBtn" class="w-full flex items-center space-x-3 rounded-lg p-2 mt-2 hover:bg-gray-100/10 transition-colors text-left border border-transparent hover:border-gray-200/20">
                         <div class="flex h-6 w-6 items-center justify-center rounded-full theme-primary">
                             <i data-lucide="palette" class="w-3 h-3 text-white"></i>
                         </div>
@@ -1393,6 +1529,9 @@
                 </div>
             `;
             if(window.lucide) window.lucide.createIcons();
+            
+            // Re-render notifications into the new container
+            renderNotificationsPanel();
         }
 
         function renderRightSidebar() {
